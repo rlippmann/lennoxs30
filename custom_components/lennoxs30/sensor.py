@@ -659,6 +659,11 @@ class S30ZoneAirDemandSensor(S30ZoneRuntimeSensor):
             return value
         return None
 
+    @property
+    def native_unit_of_measurement(self):
+        """Return native unit of measurement."""
+        return PERCENTAGE
+
 
 class S30InverterPowerSensor(S30BaseEntityMixin, SensorEntity):
     """Class for Lennox S30 inverter power."""
