@@ -1,0 +1,895 @@
+# Lennox filter restriction monitor package sample for one system.
+#
+# This is a package-only design for Home Assistant. It is intentionally
+# self-contained and includes:
+# - helpers
+# - statistics sensors
+# - template sensors
+# - binary sensor
+# - one user-facing filter replacement script
+# - snapshot automation
+# - watchdog automation
+#
+# Search/replace guidance:
+# - Replace the prefix "system" with your actual system prefix.
+# - Verify the climate entity and diagnostic entity names before installing.
+# - This sample is not installed automatically; copy it into your Home Assistant
+#   packages directory if you choose to use it.
+#
+# Key design choices from live testing and review:
+# - Diagnostic level 1 is sufficient for v1.
+# - hvac_action is the primary trigger signal.
+# - CFM > 0 is not a sufficient trigger because level 1 can expose idle/circulate
+#   blower values.
+# - RPM/CFM is the primary restriction metric.
+# - Power/CFM is retained as a secondary diagnostic metric.
+# - v3 no longer requires CFM to stay above the exposed low "normal cooling"
+#   airflow parameter. Low airflow can be valid during variable-speed operation.
+# - Climate demand is recorded for context on accepted and rejected samples, but
+#   it is not yet used as a gating threshold.
+# - A high-airflow sanity bound is still applied to reject implausible values.
+# - Static pressure / TESP is intentionally out of scope for v1.
+# - This package intentionally exposes a binary sensor only for restriction
+#   state; notification automations are left to the user.
+# - This is an advanced sample that temporarily raises Lennox diagnostic level
+#   only when needed, and it should be used with the watchdog enabled.
+# - Systems that spend long periods in `hvac_action = drying` may not collect
+#   samples because this package only captures `cooling` and `heating`.
+# - Variable-capacity systems may legitimately report airflow below "normal
+#   cooling airflow" parameter values, so airflow bounds may require local
+#   tuning and should not be treated as universally valid.
+#
+# Tuning points:
+# - input_number.system_filter_restriction_threshold_pct
+#   Comment: 20% is provisional and should be tuned with local data.
+# - input_number.system_filter_min_samples_required
+# - input_number.system_filter_snapshot_cooldown_hours
+# - input_number.system_filter_diag_wait_timeout_seconds
+# - input_number.system_filter_watchdog_timeout_minutes
+#
+# Activation:
+# - Installing this package creates helper entities, sensors, scripts, and
+#   automations.
+# - Installing the package does not begin diagnostic sampling automatically.
+# - The snapshot collector automation is disabled by default.
+# - The watchdog automation is disabled by default.
+# - To start collecting samples, enable both:
+#   - the snapshot collector automation
+#   - the watchdog automation
+# - The watchdog should be enabled whenever the collector is enabled.
+# - Validate entity mappings and run Home Assistant config validation before
+#   enabling either automation.
+#
+# Install notes:
+# - Keep the snapshot automation disabled initially.
+# - Keep the watchdog automation disabled initially if you are still validating.
+# - The watchdog should be enabled whenever the snapshot automation is enabled.
+# - Diagnostic sampling should not be run without the watchdog enabled.
+# - Verify entity mappings and validate Home Assistant configuration before
+#   enabling the sample.
+# - Review airflow bounds against local equipment behavior and dogfood the
+#   sample before relying on alerts.
+
+input_boolean:
+  system_filter_snapshot_running:
+    name: System Filter Restriction Snapshot Running
+  system_filter_restriction_diag_changed:
+    name: System Filter Restriction Diagnostics Changed
+
+input_datetime:
+  system_filter_diag_enabled_at:
+    name: System Filter Restriction Diagnostics Enabled At
+    has_date: true
+    has_time: true
+  system_filter_last_snapshot:
+    name: System Filter Restriction Last Snapshot
+    has_date: true
+    has_time: true
+  system_filter_last_changed:
+    name: System Filter Restriction Filter Last Changed
+    has_date: true
+    has_time: true
+
+input_select:
+  system_filter_last_sample_mode:
+    name: System Filter Restriction Last System Mode
+    options:
+      - idle
+      - cooling
+      - heating
+    initial: idle
+
+input_text:
+  system_filter_restriction_last_reject_reason:
+    name: System Filter Restriction Last Reject Reason
+    max: 255
+
+input_number:
+  system_filter_saved_diag_level:
+    name: System Filter Restriction Saved Diagnostic Level
+    min: 0
+    max: 10
+    step: 1
+    mode: box
+
+  system_filter_diagnostic_level:
+    name: System Filter Restriction Diagnostic Level
+    min: 0
+    max: 2
+    step: 1
+    mode: box
+    initial: 1
+
+  system_filter_snapshot_cooldown_hours:
+    name: System Filter Restriction Snapshot Cooldown Hours
+    min: 0
+    max: 168
+    step: 1
+    mode: box
+    initial: 23
+
+  system_filter_min_samples_required:
+    name: System Filter Restriction Minimum Samples Required
+    min: 1
+    max: 100
+    step: 1
+    mode: box
+    initial: 10
+
+  system_filter_diag_wait_timeout_seconds:
+    name: System Filter Restriction Diagnostics Wait Timeout Seconds
+    min: 15
+    max: 300
+    step: 5
+    mode: box
+    initial: 120
+
+  system_filter_capture_retry_seconds:
+    name: System Filter Restriction Capture Retry Seconds
+    min: 10
+    max: 120
+    step: 5
+    mode: box
+    initial: 30
+
+  system_filter_capture_window_minutes:
+    name: System Filter Restriction Capture Window Minutes
+    min: 1
+    max: 30
+    step: 1
+    mode: box
+    initial: 10
+
+  system_filter_watchdog_timeout_minutes:
+    name: System Filter Restriction Watchdog Timeout Minutes
+    min: 1
+    max: 30
+    step: 1
+    mode: box
+    initial: 15
+
+  system_filter_restriction_threshold_pct:
+    name: System Filter Restriction Threshold Percent
+    min: 1
+    max: 100
+    step: 0.5
+    unit_of_measurement: "%"
+    mode: box
+    initial: 20
+
+  system_filter_last_rpm:
+    name: System Filter Restriction Last RPM
+    min: 0
+    max: 3000
+    step: 1
+    unit_of_measurement: rpm
+
+  system_filter_last_cfm:
+    name: System Filter Restriction Last CFM
+    min: 0
+    max: 3000
+    step: 1
+    unit_of_measurement: ft³/min
+
+  system_filter_last_demand:
+    name: System Filter Restriction Last Demand
+    min: 0
+    max: 100
+    step: 0.1
+    unit_of_measurement: "%"
+
+  system_filter_last_power_pct:
+    name: System Filter Restriction Last Blower Power Percent
+    min: 0
+    max: 100
+    step: 0.1
+    unit_of_measurement: "%"
+
+  system_filter_last_outdoor_temp:
+    name: System Filter Restriction Last Outdoor Temperature
+    min: -40
+    max: 140
+    step: 0.1
+    unit_of_measurement: "°F"
+
+  system_filter_last_cool_rpm_per_cfm:
+    name: System Filter Restriction Last Cool RPM per CFM
+    min: 0
+    max: 10
+    step: 0.000001
+
+  system_filter_last_cool_power_per_cfm:
+    name: System Filter Restriction Last Cool Power per CFM
+    min: 0
+    max: 1
+    step: 0.000001
+
+  system_filter_last_heat_rpm_per_cfm:
+    name: System Filter Restriction Last Heat RPM per CFM
+    min: 0
+    max: 10
+    step: 0.000001
+
+  system_filter_last_heat_power_per_cfm:
+    name: System Filter Restriction Last Heat Power per CFM
+    min: 0
+    max: 1
+    step: 0.000001
+
+  system_filter_baseline_cool_rpm_per_cfm:
+    name: System Filter Restriction Baseline Cool RPM per CFM
+    min: 0
+    max: 10
+    step: 0.000001
+    mode: box
+
+  system_filter_baseline_cool_power_per_cfm:
+    name: System Filter Restriction Baseline Cool Power per CFM
+    min: 0
+    max: 1
+    step: 0.000001
+    mode: box
+
+  system_filter_baseline_heat_rpm_per_cfm:
+    name: System Filter Restriction Baseline Heat RPM per CFM
+    min: 0
+    max: 10
+    step: 0.000001
+    mode: box
+
+  system_filter_baseline_heat_power_per_cfm:
+    name: System Filter Restriction Baseline Heat Power per CFM
+    min: 0
+    max: 1
+    step: 0.000001
+    mode: box
+
+sensor:
+  - platform: statistics
+    name: System Filter Restriction Cool RPM per CFM Mean
+    entity_id: input_number.system_filter_last_cool_rpm_per_cfm
+    state_characteristic: mean
+    sampling_size: 200
+    max_age:
+      days: 14
+
+  - platform: statistics
+    name: System Filter Restriction Cool Power per CFM Mean
+    entity_id: input_number.system_filter_last_cool_power_per_cfm
+    state_characteristic: mean
+    sampling_size: 200
+    max_age:
+      days: 14
+
+  - platform: statistics
+    name: System Filter Restriction Cool RPM per CFM Count
+    entity_id: input_number.system_filter_last_cool_rpm_per_cfm
+    state_characteristic: count
+    sampling_size: 200
+    max_age:
+      days: 14
+
+  - platform: statistics
+    name: System Filter Restriction Cool Power per CFM Count
+    entity_id: input_number.system_filter_last_cool_power_per_cfm
+    state_characteristic: count
+    sampling_size: 200
+    max_age:
+      days: 14
+
+  - platform: statistics
+    name: System Filter Restriction Heat RPM per CFM Mean
+    entity_id: input_number.system_filter_last_heat_rpm_per_cfm
+    state_characteristic: mean
+    sampling_size: 200
+    max_age:
+      days: 14
+
+  - platform: statistics
+    name: System Filter Restriction Heat Power per CFM Mean
+    entity_id: input_number.system_filter_last_heat_power_per_cfm
+    state_characteristic: mean
+    sampling_size: 200
+    max_age:
+      days: 14
+
+  - platform: statistics
+    name: System Filter Restriction Heat RPM per CFM Count
+    entity_id: input_number.system_filter_last_heat_rpm_per_cfm
+    state_characteristic: count
+    sampling_size: 200
+    max_age:
+      days: 14
+
+  - platform: statistics
+    name: System Filter Restriction Heat Power per CFM Count
+    entity_id: input_number.system_filter_last_heat_power_per_cfm
+    state_characteristic: count
+    sampling_size: 200
+    max_age:
+      days: 14
+
+template:
+  - sensor:
+      - name: System Filter Restriction Last Changed
+        unique_id: system_filter_restriction_last_changed
+        state: "{{ states('input_datetime.system_filter_last_changed') }}"
+
+      - name: System Filter Restriction Last Snapshot
+        unique_id: system_filter_restriction_last_snapshot
+        state: "{{ states('input_datetime.system_filter_last_snapshot') }}"
+
+      - name: System Filter Restriction Cooling RPM Degradation
+        unique_id: system_filter_restriction_cooling_rpm_degradation
+        unit_of_measurement: "%"
+        state: >
+          {% set baseline = states('input_number.system_filter_baseline_cool_rpm_per_cfm') | float(0) %}
+          {% set current = states('sensor.system_filter_restriction_cool_rpm_per_cfm_mean') | float(0) %}
+          {{ (((current - baseline) / baseline) * 100) | round(2) if baseline > 0 else 0 }}
+
+      - name: System Filter Restriction Cooling Power Degradation
+        unique_id: system_filter_restriction_cooling_power_degradation
+        unit_of_measurement: "%"
+        state: >
+          {% set baseline = states('input_number.system_filter_baseline_cool_power_per_cfm') | float(0) %}
+          {% set current = states('sensor.system_filter_restriction_cool_power_per_cfm_mean') | float(0) %}
+          {{ (((current - baseline) / baseline) * 100) | round(2) if baseline > 0 else 0 }}
+
+      - name: System Filter Restriction Heating RPM Degradation
+        unique_id: system_filter_restriction_heating_rpm_degradation
+        unit_of_measurement: "%"
+        state: >
+          {% set baseline = states('input_number.system_filter_baseline_heat_rpm_per_cfm') | float(0) %}
+          {% set current = states('sensor.system_filter_restriction_heat_rpm_per_cfm_mean') | float(0) %}
+          {{ (((current - baseline) / baseline) * 100) | round(2) if baseline > 0 else 0 }}
+
+      - name: System Filter Restriction Heating Power Degradation
+        unique_id: system_filter_restriction_heating_power_degradation
+        unit_of_measurement: "%"
+        state: >
+          {% set baseline = states('input_number.system_filter_baseline_heat_power_per_cfm') | float(0) %}
+          {% set current = states('sensor.system_filter_restriction_heat_power_per_cfm_mean') | float(0) %}
+          {{ (((current - baseline) / baseline) * 100) | round(2) if baseline > 0 else 0 }}
+
+      - name: System Filter Restriction Primary RPM Degradation
+        unique_id: system_filter_restriction_primary_rpm_degradation
+        unit_of_measurement: "%"
+        state: >
+          {% set mode = states('input_select.system_filter_last_sample_mode') %}
+          {% if mode == 'cooling' %}
+            {{ states('sensor.system_filter_restriction_cooling_rpm_degradation') | float(0) }}
+          {% elif mode == 'heating' %}
+            {{ states('sensor.system_filter_restriction_heating_rpm_degradation') | float(0) }}
+          {% else %}
+            0
+          {% endif %}
+
+      - name: System Filter Restriction Secondary Power Degradation
+        unique_id: system_filter_restriction_secondary_power_degradation
+        unit_of_measurement: "%"
+        state: >
+          {% set mode = states('input_select.system_filter_last_sample_mode') %}
+          {% if mode == 'cooling' %}
+            {{ states('sensor.system_filter_restriction_cooling_power_degradation') | float(0) }}
+          {% elif mode == 'heating' %}
+            {{ states('sensor.system_filter_restriction_heating_power_degradation') | float(0) }}
+          {% else %}
+            0
+          {% endif %}
+
+      - name: System Filter Restriction System Count Ready
+        unique_id: system_filter_restriction_sample_count_ready
+        state: >
+          {% set mode = states('input_select.system_filter_last_sample_mode') %}
+          {% set min_samples = states('input_number.system_filter_min_samples_required') | int(10) %}
+          {% if mode == 'cooling' %}
+            {{ states('sensor.system_filter_restriction_cool_rpm_per_cfm_count') | int(0) >= min_samples
+               and states('sensor.system_filter_restriction_cool_power_per_cfm_count') | int(0) >= min_samples }}
+          {% elif mode == 'heating' %}
+            {{ states('sensor.system_filter_restriction_heat_rpm_per_cfm_count') | int(0) >= min_samples
+               and states('sensor.system_filter_restriction_heat_power_per_cfm_count') | int(0) >= min_samples }}
+          {% else %}
+            false
+          {% endif %}
+
+  - binary_sensor:
+      - name: System Filter Restriction Detected
+        unique_id: system_filter_restriction_detected
+        # This package intentionally exposes a binary sensor only. Create your
+        # own notification automation from this entity if desired.
+        state: >
+          {% set mode = states('input_select.system_filter_last_sample_mode') %}
+          {% set min_samples = states('input_number.system_filter_min_samples_required') | int(10) %}
+          {% set threshold = states('input_number.system_filter_restriction_threshold_pct') | float(20) %}
+          {% if mode == 'cooling' %}
+            {{ states('sensor.system_filter_restriction_cool_rpm_per_cfm_count') | int(0) >= min_samples
+               and states('sensor.system_filter_restriction_cool_power_per_cfm_count') | int(0) >= min_samples
+               and states('sensor.system_filter_restriction_cooling_rpm_degradation') | float(0) >= threshold }}
+          {% elif mode == 'heating' %}
+            {{ states('sensor.system_filter_restriction_heat_rpm_per_cfm_count') | int(0) >= min_samples
+               and states('sensor.system_filter_restriction_heat_power_per_cfm_count') | int(0) >= min_samples
+               and states('sensor.system_filter_restriction_heating_rpm_degradation') | float(0) >= threshold }}
+          {% else %}
+            false
+          {% endif %}
+
+script:
+  system_mark_filter_replaced:
+    alias: System Mark Filter Replaced
+    mode: single
+    sequence:
+      # One physical filter replacement action updates whichever mode baselines
+      # currently have enough valid rolling-average data.
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.system_filter_last_changed
+        data:
+          datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: >
+                  {% set min_samples = states('input_number.system_filter_min_samples_required') | int(10) %}
+                  {{ states('sensor.system_filter_restriction_cool_rpm_per_cfm_mean') | float(0) > 0
+                     and states('sensor.system_filter_restriction_cool_power_per_cfm_mean') | float(0) > 0
+                     and states('sensor.system_filter_restriction_cool_rpm_per_cfm_count') | int(0) >= min_samples
+                     and states('sensor.system_filter_restriction_cool_power_per_cfm_count') | int(0) >= min_samples }}
+            sequence:
+              - action: input_number.set_value
+                target:
+                  entity_id: input_number.system_filter_baseline_cool_rpm_per_cfm
+                data:
+                  value: "{{ states('sensor.system_filter_restriction_cool_rpm_per_cfm_mean') | float(0) }}"
+              - action: input_number.set_value
+                target:
+                  entity_id: input_number.system_filter_baseline_cool_power_per_cfm
+                data:
+                  value: "{{ states('sensor.system_filter_restriction_cool_power_per_cfm_mean') | float(0) }}"
+
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: >
+                  {% set min_samples = states('input_number.system_filter_min_samples_required') | int(10) %}
+                  {{ states('sensor.system_filter_restriction_heat_rpm_per_cfm_mean') | float(0) > 0
+                     and states('sensor.system_filter_restriction_heat_power_per_cfm_mean') | float(0) > 0
+                     and states('sensor.system_filter_restriction_heat_rpm_per_cfm_count') | int(0) >= min_samples
+                     and states('sensor.system_filter_restriction_heat_power_per_cfm_count') | int(0) >= min_samples }}
+            sequence:
+              - action: input_number.set_value
+                target:
+                  entity_id: input_number.system_filter_baseline_heat_rpm_per_cfm
+                data:
+                  value: "{{ states('sensor.system_filter_restriction_heat_rpm_per_cfm_mean') | float(0) }}"
+              - action: input_number.set_value
+                target:
+                  entity_id: input_number.system_filter_baseline_heat_power_per_cfm
+                data:
+                  value: "{{ states('sensor.system_filter_restriction_heat_power_per_cfm_mean') | float(0) }}"
+
+automation:
+  - id: system_lennox_filter_restriction_snapshot
+    alias: System Lennox Filter Restriction Snapshot
+    # Disabled by default.
+    # Enable only after validating entity mappings and confirming diagnostics
+    # restore correctly.
+    # The collector should not be enabled without the watchdog.
+    initial_state: false
+    mode: single
+    # Trigger note:
+    # This automation triggers only after hvac_action has remained
+    # cooling/heating for 10 minutes, so short cycles are ignored.
+    # The trigger is not the rate limiter; repeated valid cycles are
+    # controlled by the snapshot cooldown helper.
+    # This means multiple long calls in one day are harmless unless
+    # cooldown has expired.
+    trigger:
+      - platform: state
+        entity_id: climate.system_zone_1
+        attribute: hvac_action
+        to: cooling
+        for:
+          minutes: 10
+      - platform: state
+        entity_id: climate.system_zone_1
+        attribute: hvac_action
+        to: heating
+        for:
+          minutes: 10
+    variables:
+      pre_hvac_action: "{{ state_attr('climate.system_zone_1', 'hvac_action') | default('') | lower }}"
+      cooldown_hours: "{{ states('input_number.system_filter_snapshot_cooldown_hours') | float(23) }}"
+      last_snapshot: "{{ states('input_datetime.system_filter_last_snapshot') }}"
+      diag_target: "{{ states('input_number.system_filter_diagnostic_level') | float(1) }}"
+      cooldown_ok: >
+        {% if last_snapshot in ['unknown', 'unavailable', 'none', ''] %}
+          true
+        {% else %}
+          {{ (as_timestamp(now()) - as_timestamp(last_snapshot)) >= cooldown_hours * 3600 }}
+        {% endif %}
+    condition:
+      - condition: template
+        value_template: "{{ pre_hvac_action in ['cooling', 'heating'] }}"
+      - condition: template
+        value_template: "{{ cooldown_ok }}"
+    action:
+      - action: input_boolean.turn_on
+        target:
+          entity_id: input_boolean.system_filter_snapshot_running
+
+      - variables:
+          prior_diag: "{{ states('number.system_diagnostic_level') | float(0) }}"
+          diag_target: "{{ states('input_number.system_filter_diagnostic_level') | float(1) }}"
+
+      - action: input_number.set_value
+        target:
+          entity_id: input_number.system_filter_saved_diag_level
+        data:
+          value: "{{ prior_diag }}"
+
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.system_filter_restriction_diag_changed
+
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.system_filter_diag_enabled_at
+        data:
+          datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+
+      - action: input_text.set_value
+        target:
+          entity_id: input_text.system_filter_restriction_last_reject_reason
+        data:
+          value: ""
+
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: "{{ prior_diag < diag_target }}"
+            sequence:
+              - action: input_boolean.turn_on
+                target:
+                  entity_id: input_boolean.system_filter_restriction_diag_changed
+              - action: number.set_value
+                target:
+                  entity_id: number.system_diagnostic_level
+                data:
+                  value: "{{ diag_target }}"
+
+      # Wait until the required diagnostic entities are actually available.
+      - wait_template: >
+          {{ states('sensor.system_iu_blower_cfm_demand') not in ['unknown', 'unavailable', 'none', '']
+             and states('sensor.system_iu_indoor_blower_rpm') not in ['unknown', 'unavailable', 'none', '']
+             and states('sensor.system_iu_indoor_blower_power') not in ['unknown', 'unavailable', 'none', '']
+             and states('sensor.system_iu_defrost_status') not in ['unknown', 'unavailable', 'none', '']
+             and states('sensor.system_iu_dehumidification_relay_status') not in ['unknown', 'unavailable', 'none', '']
+             and states('sensor.system_iu_humidification_relay_status') not in ['unknown', 'unavailable', 'none', ''] }}
+        timeout:
+          seconds: "{{ states('input_number.system_filter_diag_wait_timeout_seconds') | int(120) }}"
+        continue_on_timeout: true
+
+      - variables:
+          capture_retry_seconds: "{{ states('input_number.system_filter_capture_retry_seconds') | int(30) }}"
+          capture_window_minutes: "{{ states('input_number.system_filter_capture_window_minutes') | int(10) }}"
+          capture_deadline_ts: "{{ as_timestamp(now()) + (capture_window_minutes * 60) }}"
+
+      - repeat:
+          sequence:
+            - variables:
+                capture_attempt: "{{ repeat.index }}"
+                hvac_action: "{{ state_attr('climate.system_zone_1', 'hvac_action') | default('') | lower }}"
+                demand: "{{ state_attr('climate.system_zone_1', 'demand') | float(0) }}"
+                rpm: "{{ states('sensor.system_iu_indoor_blower_rpm') | float(0) }}"
+                cfm: "{{ states('sensor.system_iu_blower_cfm_demand') | float(0) }}"
+                power_pct: "{{ states('sensor.system_iu_indoor_blower_power') | float(0) }}"
+                outdoor_temp: "{{ states('sensor.system_iu_outdoor_temperature') | float(0) }}"
+                dehumid_state: "{{ states('sensor.system_iu_dehumidification_relay_status') | lower }}"
+                humid_state: "{{ states('sensor.system_iu_humidification_relay_status') | lower }}"
+                defrost_state: "{{ states('sensor.system_iu_defrost_status') | lower }}"
+                diag_available: >
+                  {{ states('sensor.system_iu_blower_cfm_demand') not in ['unknown', 'unavailable', 'none', '']
+                     and states('sensor.system_iu_indoor_blower_rpm') not in ['unknown', 'unavailable', 'none', '']
+                     and states('sensor.system_iu_indoor_blower_power') not in ['unknown', 'unavailable', 'none', '']
+                     and states('sensor.system_iu_defrost_status') not in ['unknown', 'unavailable', 'none', '']
+                     and states('sensor.system_iu_dehumidification_relay_status') not in ['unknown', 'unavailable', 'none', '']
+                     and states('sensor.system_iu_humidification_relay_status') not in ['unknown', 'unavailable', 'none', ''] }}
+                low_bound: >
+                  {% if hvac_action == 'cooling' %}
+                    {{ states('number.system_par_ou_low_normal_cooling_airflow') | float(0) }}
+                  {% elif hvac_action == 'heating' %}
+                    {{ states('number.system_par_ou_low_normal_hp_heating_airflow') | float(0) }}
+                  {% else %}
+                    0
+                  {% endif %}
+                high_bound: >
+                  {% if hvac_action == 'cooling' %}
+                    {{ states('number.system_par_ou_high_normal_cooling_airflow') | float(99999) }}
+                  {% elif hvac_action == 'heating' %}
+                    {{ states('number.system_par_ou_high_normal_hp_heating_airflow') | float(99999) }}
+                  {% else %}
+                    99999
+                  {% endif %}
+                high_bound_sanity: "{{ (high_bound | float(99999)) * 1.2 }}"
+                cooldown_ok_now: >
+                  {% if last_snapshot in ['unknown', 'unavailable', 'none', ''] %}
+                    true
+                  {% else %}
+                    {{ (as_timestamp(now()) - as_timestamp(last_snapshot)) >= cooldown_hours * 3600 }}
+                  {% endif %}
+                post_diag_capture_ok: >
+                  {{ diag_available
+                     and hvac_action in ['cooling', 'heating']
+                     and dehumid_state in ['open', 'off', 'inactive', '0', 'false']
+                     and humid_state in ['open', 'off', 'inactive', '0', 'false']
+                     and defrost_state in ['off', 'open', 'inactive', '0', 'false']
+                     and cfm > 0
+                     and rpm > 0
+                     and cfm <= (high_bound_sanity | float(99999))
+                     and cooldown_ok_now }}
+
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: "{{ post_diag_capture_ok }}"
+                  sequence:
+                    - action: input_text.set_value
+                      target:
+                        entity_id: input_text.system_filter_restriction_last_reject_reason
+                      data:
+                        value: "accepted"
+
+                    - action: input_select.select_option
+                      target:
+                        entity_id: input_select.system_filter_last_sample_mode
+                      data:
+                        option: "{{ hvac_action }}"
+
+                    - action: input_number.set_value
+                      target:
+                        entity_id: input_number.system_filter_last_rpm
+                      data:
+                        value: "{{ rpm }}"
+
+                    - action: input_number.set_value
+                      target:
+                        entity_id: input_number.system_filter_last_cfm
+                      data:
+                        value: "{{ cfm }}"
+
+                    - action: input_number.set_value
+                      target:
+                        entity_id: input_number.system_filter_last_demand
+                      data:
+                        value: "{{ demand }}"
+
+                    - action: input_number.set_value
+                      target:
+                        entity_id: input_number.system_filter_last_power_pct
+                      data:
+                        value: "{{ power_pct }}"
+
+                    - action: input_number.set_value
+                      target:
+                        entity_id: input_number.system_filter_last_outdoor_temp
+                      data:
+                        value: "{{ outdoor_temp }}"
+
+                    - choose:
+                        - conditions:
+                            - condition: template
+                              value_template: "{{ hvac_action == 'cooling' }}"
+                          sequence:
+                            - action: input_number.set_value
+                              target:
+                                entity_id: input_number.system_filter_last_cool_rpm_per_cfm
+                              data:
+                                value: "{{ (rpm / cfm) | round(6) }}"
+                            - action: input_number.set_value
+                              target:
+                                entity_id: input_number.system_filter_last_cool_power_per_cfm
+                              data:
+                                value: "{{ (power_pct / cfm) | round(6) }}"
+                        - conditions:
+                            - condition: template
+                              value_template: "{{ hvac_action == 'heating' }}"
+                          sequence:
+                            - action: input_number.set_value
+                              target:
+                                entity_id: input_number.system_filter_last_heat_rpm_per_cfm
+                              data:
+                                value: "{{ (rpm / cfm) | round(6) }}"
+                            - action: input_number.set_value
+                              target:
+                                entity_id: input_number.system_filter_last_heat_power_per_cfm
+                              data:
+                                value: "{{ (power_pct / cfm) | round(6) }}"
+
+                    - action: input_datetime.set_datetime
+                      target:
+                        entity_id: input_datetime.system_filter_last_snapshot
+                      data:
+                        datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+              default:
+                - action: input_text.set_value
+                  target:
+                    entity_id: input_text.system_filter_restriction_last_reject_reason
+                  data:
+                    value: >-
+                      {{ ("attempt=" ~ capture_attempt
+                      ~ "; hvac_action=" ~ hvac_action
+                      ~ "; demand=" ~ (demand | round(2))
+                      ~ "; diag=" ~ diag_available
+                      ~ "; cfm=" ~ (cfm | round(2))
+                      ~ "; rpm=" ~ (rpm | round(2))
+                      ~ "; power=" ~ (power_pct | round(2))
+                      ~ "; dehumid=" ~ dehumid_state
+                      ~ "; humid=" ~ humid_state
+                      ~ "; defrost=" ~ defrost_state
+                      ~ "; bounds=" ~ (low_bound | round(2)) ~ "-" ~ (high_bound | round(2))
+                      ~ "; high_sanity=" ~ (high_bound_sanity | round(2))
+                      ~ "; cooldown=" ~ cooldown_ok_now)[:255] }}
+
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ states('input_text.system_filter_restriction_last_reject_reason') != 'accepted'
+                           and as_timestamp(now()) < (capture_deadline_ts | float(0)) }}
+                  sequence:
+                    - delay:
+                        seconds: "{{ capture_retry_seconds }}"
+          until:
+            - condition: template
+              value_template: >
+                {{ states('input_text.system_filter_restriction_last_reject_reason') == 'accepted'
+                   or as_timestamp(now()) >= (capture_deadline_ts | float(0)) }}
+
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: "{{ states('input_text.system_filter_restriction_last_reject_reason') != 'accepted' }}"
+            sequence:
+              - variables:
+                  capture_attempt: "{{ repeat.index if repeat is defined else 0 }}"
+                  hvac_action: "{{ state_attr('climate.system_zone_1', 'hvac_action') | default('') | lower }}"
+                  demand: "{{ state_attr('climate.system_zone_1', 'demand') | float(0) }}"
+                  rpm: "{{ states('sensor.system_iu_indoor_blower_rpm') | float(0) }}"
+                  cfm: "{{ states('sensor.system_iu_blower_cfm_demand') | float(0) }}"
+                  power_pct: "{{ states('sensor.system_iu_indoor_blower_power') | float(0) }}"
+                  dehumid_state: "{{ states('sensor.system_iu_dehumidification_relay_status') | lower }}"
+                  humid_state: "{{ states('sensor.system_iu_humidification_relay_status') | lower }}"
+                  defrost_state: "{{ states('sensor.system_iu_defrost_status') | lower }}"
+                  diag_available: >
+                    {{ states('sensor.system_iu_blower_cfm_demand') not in ['unknown', 'unavailable', 'none', '']
+                       and states('sensor.system_iu_indoor_blower_rpm') not in ['unknown', 'unavailable', 'none', '']
+                       and states('sensor.system_iu_indoor_blower_power') not in ['unknown', 'unavailable', 'none', '']
+                       and states('sensor.system_iu_defrost_status') not in ['unknown', 'unavailable', 'none', '']
+                       and states('sensor.system_iu_dehumidification_relay_status') not in ['unknown', 'unavailable', 'none', '']
+                       and states('sensor.system_iu_humidification_relay_status') not in ['unknown', 'unavailable', 'none', ''] }}
+                  low_bound: >
+                    {% if hvac_action == 'cooling' %}
+                      {{ states('number.system_par_ou_low_normal_cooling_airflow') | float(0) }}
+                    {% elif hvac_action == 'heating' %}
+                      {{ states('number.system_par_ou_low_normal_hp_heating_airflow') | float(0) }}
+                    {% else %}
+                      0
+                    {% endif %}
+                  high_bound: >
+                    {% if hvac_action == 'cooling' %}
+                      {{ states('number.system_par_ou_high_normal_cooling_airflow') | float(99999) }}
+                    {% elif hvac_action == 'heating' %}
+                      {{ states('number.system_par_ou_high_normal_hp_heating_airflow') | float(99999) }}
+                    {% else %}
+                      99999
+                    {% endif %}
+                  high_bound_sanity: "{{ (high_bound | float(99999)) * 1.2 }}"
+                  cooldown_ok_now: >
+                    {% if last_snapshot in ['unknown', 'unavailable', 'none', ''] %}
+                      true
+                    {% else %}
+                      {{ (as_timestamp(now()) - as_timestamp(last_snapshot)) >= cooldown_hours * 3600 }}
+                    {% endif %}
+              - action: input_text.set_value
+                target:
+                  entity_id: input_text.system_filter_restriction_last_reject_reason
+                data:
+                  value: >-
+                    {{ ("timeout; hvac_action=" ~ hvac_action
+                    ~ "; demand=" ~ (demand | round(2))
+                    ~ "; diag=" ~ diag_available
+                    ~ "; cfm=" ~ (cfm | round(2))
+                    ~ "; rpm=" ~ (rpm | round(2))
+                    ~ "; power=" ~ (power_pct | round(2))
+                    ~ "; dehumid=" ~ dehumid_state
+                    ~ "; humid=" ~ humid_state
+                    ~ "; defrost=" ~ defrost_state
+                    ~ "; bounds=" ~ (low_bound | round(2)) ~ "-" ~ (high_bound | round(2))
+                    ~ "; high_sanity=" ~ (high_bound_sanity | round(2))
+                    ~ "; cooldown=" ~ cooldown_ok_now)[:255] }}
+
+      - choose:
+          - conditions:
+              - condition: state
+                entity_id: input_boolean.system_filter_restriction_diag_changed
+                state: "on"
+            sequence:
+              - action: number.set_value
+                target:
+                  entity_id: number.system_diagnostic_level
+                data:
+                  value: "{{ states('input_number.system_filter_saved_diag_level') | float(0) }}"
+
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.system_filter_snapshot_running
+
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.system_filter_restriction_diag_changed
+
+  - id: system_lennox_filter_restriction_watchdog
+    alias: System Lennox Filter Restriction Watchdog
+    # Disabled by default.
+    # Enable whenever the snapshot collector is enabled.
+    # Its job is to restore the saved diagnostic level if a snapshot attempt
+    # fails before cleanup.
+    # Preserve the prior last-sample mode when the watchdog fires, because a
+    # watchdog intervention represents a failed attempt rather than a new sample.
+    # If diagnostics were already at or above the target level before sampling,
+    # the watchdog leaves the live diagnostic level untouched and only clears the
+    # running/changed flags.
+    initial_state: false
+    mode: single
+    trigger:
+      - platform: time_pattern
+        minutes: "/1"
+    condition:
+      - condition: state
+        entity_id: input_boolean.system_filter_snapshot_running
+        state: "on"
+      - condition: template
+        value_template: >
+          {% set enabled_at = states('input_datetime.system_filter_diag_enabled_at') %}
+          {% set timeout_minutes = states('input_number.system_filter_watchdog_timeout_minutes') | float(10) %}
+          {{ enabled_at not in ['unknown', 'unavailable', 'none', '']
+             and (as_timestamp(now()) - as_timestamp(enabled_at)) > timeout_minutes * 60 }}
+    action:
+      - choose:
+          - conditions:
+              - condition: state
+                entity_id: input_boolean.system_filter_restriction_diag_changed
+                state: "on"
+            sequence:
+              - action: number.set_value
+                target:
+                  entity_id: number.system_diagnostic_level
+                data:
+                  value: "{{ states('input_number.system_filter_saved_diag_level') | float(0) }}"
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.system_filter_snapshot_running
+      - action: input_boolean.turn_off
+        target:
+          entity_id: input_boolean.system_filter_restriction_diag_changed
