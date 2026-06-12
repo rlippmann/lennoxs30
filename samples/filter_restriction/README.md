@@ -9,9 +9,11 @@ This sample is intended for experienced users who are comfortable validating ent
 ## Components
 
 Contents:
+
 - `lennox_filter_restriction_monitor_package_sample.yaml`
 
 The package includes:
+
 - helper entities
 - statistics sensors
 - template sensors
@@ -47,6 +49,7 @@ The package includes:
 ## Customization Checklist
 
 Before enabling the sample:
+
 - verify entity mappings for the target system
 - validate Home Assistant configuration
 - enable the watchdog together with the collector
@@ -54,8 +57,54 @@ Before enabling the sample:
 - review airflow bounds against local equipment behavior
 - dogfood the package before relying on alerts or automations built on top of it
 
+## Establishing a Clean Filter Baseline
+
+The monitor does not automatically know what a clean filter looks like.
+
+Recommended process:
+
+1. Install a new filter.
+2. Enable the collector and watchdog automations.
+3. Allow the system to collect multiple valid samples.
+4. Verify that sample counts have accumulated.
+5. Run the baseline script.
+
+The baseline script records the current accepted measurements as the clean-filter reference used for future comparisons.
+
+The script does not force a new sample capture. It uses previously collected valid sample data.
+
+## Baseline Script
+
+The package includes a user-facing script that records the current accepted measurements as the clean-filter baseline.
+
+Run this script:
+
+- after installing a new filter
+- after collecting sufficient valid samples
+
+Do not run it immediately after package installation before valid samples exist.
+
 ## Build / Usage Notes
 
-- This is a generic sample package that uses a `system` prefix and is intended for search/replace into a real installation.
-- Local dogfood copies for specific systems are intentionally not included here.
+- This is a generic sample package that uses explicit `SYSTEM_PREFIX` and `SYSTEM_LABEL` placeholders.
+- Generated installation-specific package variants are intentionally not included in this repository.
 - No unsupported airflow formulas are assumed in this sample package. Local tuning and validation are expected.
+- The generator derives the display label automatically from the system prefix.
+  Example: `upstairs` -> `Upstairs`, `main_house` -> `Main House`.
+
+Use the helper script to generate an installation-specific package:
+
+```bash
+./generate_sample_package.sh OUTPUT_FILE SYSTEM_PREFIX
+```
+
+Example:
+
+```bash
+./generate_sample_package.sh /tmp/upstairs_filter_package.yaml upstairs
+```
+
+Arguments:
+
+- `OUTPUT_FILE`: path to the generated Home Assistant package YAML.
+- `SYSTEM_PREFIX`: replacement for entity IDs and references, such as `upstairs` or `downstairs`.
