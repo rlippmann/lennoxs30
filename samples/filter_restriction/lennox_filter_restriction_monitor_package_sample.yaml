@@ -501,25 +501,15 @@ automation:
     initial_state: false
     mode: single
     # Trigger note:
-    # This automation triggers only after hvac_action has remained
-    # cooling/heating for 10 minutes, so short cycles are ignored.
-    # The trigger is not the rate limiter; repeated valid cycles are
+    # This automation polls every 10 minutes.
+    # The trigger cadence is not the rate limiter; repeated valid cycles are
     # controlled by the snapshot cooldown helper.
-    # This means multiple long calls in one day are harmless unless
-    # cooldown has expired.
+    # A short stabilization delay is applied before diagnostics are raised,
+    # and an additional delay is applied after diagnostic entities populate
+    # before capture begins.
     trigger:
-      - platform: state
-        entity_id: climate.SYSTEM_PREFIX_zone_1
-        attribute: hvac_action
-        to: cooling
-        for:
-          minutes: 10
-      - platform: state
-        entity_id: climate.SYSTEM_PREFIX_zone_1
-        attribute: hvac_action
-        to: heating
-        for:
-          minutes: 10
+      - platform: time_pattern
+        minutes: "/10"
     variables:
       pre_hvac_action: "{{ state_attr('climate.SYSTEM_PREFIX_zone_1', 'hvac_action') | default('') | lower }}"
       cooldown_hours: "{{ states('input_number.SYSTEM_PREFIX_filter_snapshot_cooldown_hours') | float(23) }}"
@@ -537,6 +527,17 @@ automation:
       - condition: template
         value_template: "{{ cooldown_ok }}"
     action:
+      # Require the system to remain in an active mode briefly before
+      # diagnostics are raised.
+      - delay:
+          seconds: 60
+
+      - variables:
+          pre_diag_hvac_action: "{{ state_attr('climate.SYSTEM_PREFIX_zone_1', 'hvac_action') | default('') | lower }}"
+
+      - condition: template
+        value_template: "{{ pre_diag_hvac_action in ['cooling', 'heating'] }}"
+
       - action: input_boolean.turn_on
         target:
           entity_id: input_boolean.SYSTEM_PREFIX_filter_snapshot_running
@@ -592,6 +593,11 @@ automation:
         timeout:
           seconds: "{{ states('input_number.SYSTEM_PREFIX_filter_diag_wait_timeout_seconds') | int(120) }}"
         continue_on_timeout: true
+
+      # Diagnostic entities become available quickly, but a short extra delay
+      # helps avoid capturing early unstable values.
+      - delay:
+          seconds: 15
 
       - variables:
           capture_retry_seconds: "{{ states('input_number.SYSTEM_PREFIX_filter_capture_retry_seconds') | int(30) }}"

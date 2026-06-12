@@ -91,6 +91,11 @@ Do not run it immediately after package installation before valid samples exist.
 - No unsupported airflow formulas are assumed in this sample package. Local tuning and validation are expected.
 - The generator derives the display label automatically from the system prefix.
   Example: `upstairs` -> `Upstairs`, `main_house` -> `Main House`.
+- The snapshot collector automation polls every 10 minutes.
+- The snapshot cooldown helper controls eligibility; it does not control the trigger cadence.
+- When a polling check finds the system eligible, the automation waits 60 seconds before raising diagnostics.
+- After the required diagnostic entities populate, the automation waits an additional 15 seconds before beginning the bounded capture/retry loop.
+- Diagnostics are kept on only for the capture attempt and capture window, then restored as part of cleanup.
 
 Use the helper script to generate an installation-specific package:
 
