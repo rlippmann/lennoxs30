@@ -89,6 +89,8 @@ Do not run it immediately after package installation before valid samples exist.
 - This is a generic sample package that uses explicit `SYSTEM_PREFIX` and `SYSTEM_LABEL` placeholders.
 - Generated installation-specific package variants are intentionally not included in this repository.
 - No unsupported airflow formulas are assumed in this sample package. Local tuning and validation are expected.
+- Helper ranges and example tuning values in the sample are defaults for initial setup, not intended restart-reset values.
+- For the tuning helpers and `last_sample_mode`, Home Assistant should restore user-changed values across restart rather than resetting them from YAML.
 - The generator derives the display label automatically from the system prefix.
   Example: `upstairs` -> `Upstairs`, `main_house` -> `Main House`.
 - The snapshot collector automation polls every 10 minutes.
