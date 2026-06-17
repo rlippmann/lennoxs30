@@ -30,6 +30,8 @@
 #   airflow parameter. Low airflow can be valid during variable-speed operation.
 # - Climate demand is recorded for context on accepted and rejected samples, but
 #   it is not yet used as a gating threshold.
+# - Optional debug-only diagnostics such as compressor Hz and cooling/heating
+#   rate are recorded when available, but they must not gate accepted samples.
 # - A high-airflow sanity bound is still applied to reject implausible values.
 # - Static pressure / TESP is intentionally out of scope for v1.
 # - This package intentionally exposes a binary sensor only for restriction
@@ -630,9 +632,11 @@ automation:
                 capture_attempt: "{{ repeat.index }}"
                 hvac_action: "{{ state_attr('climate.SYSTEM_PREFIX_zone_1', 'hvac_action') | default('') | lower }}"
                 demand: "{{ state_attr('climate.SYSTEM_PREFIX_zone_1', 'demand') | float(0) }}"
-                compressor_hz: "{{ state_attr('climate.SYSTEM_PREFIX_zone_1', 'compressor_hz') | float(0) }}"
-                cooling_rate: "{{ state_attr('climate.SYSTEM_PREFIX_zone_1', 'cooling_rate') | float(0) }}"
-                heating_rate: "{{ state_attr('climate.SYSTEM_PREFIX_zone_1', 'heating_rate') | float(0) }}"
+                # Optional debug/context-only entities must never gate
+                # acceptance. Missing values are recorded as 0.
+                compressor_hz: "{{ states('sensor.SYSTEM_PREFIX_ou_compressor_hz') | float(0) }}"
+                cooling_rate: "{{ states('sensor.SYSTEM_PREFIX_ou_cooling_rate') | float(0) }}"
+                heating_rate: "{{ states('sensor.SYSTEM_PREFIX_ou_heating_rate') | float(0) }}"
                 rpm: "{{ states('sensor.SYSTEM_PREFIX_iu_indoor_blower_rpm') | float(0) }}"
                 cfm: "{{ states('sensor.SYSTEM_PREFIX_iu_blower_cfm_demand') | float(0) }}"
                 power_pct: "{{ states('sensor.SYSTEM_PREFIX_iu_indoor_blower_power') | float(0) }}"

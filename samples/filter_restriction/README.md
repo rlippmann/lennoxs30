@@ -99,6 +99,16 @@ Do not run it immediately after package installation before valid samples exist.
 - When a polling check finds the system eligible, the automation waits 60 seconds before raising diagnostics.
 - After the required diagnostic entities populate, the automation waits an additional 15 seconds before beginning the bounded capture/retry loop.
 - Diagnostics are kept on only for the capture attempt and capture window, then restored as part of cleanup.
+- Accepted samples still require these core entities to be available and valid:
+  `sensor.<prefix>_iu_blower_cfm_demand`, `sensor.<prefix>_iu_indoor_blower_rpm`,
+  `sensor.<prefix>_iu_indoor_blower_power`, `sensor.<prefix>_iu_defrost_status`,
+  `sensor.<prefix>_iu_dehumidification_relay_status`,
+  `sensor.<prefix>_iu_humidification_relay_status`,
+  `number.<prefix>_diagnostic_level`, and `climate.<prefix>_zone_1`.
+- Optional debug/context entities do not gate acceptance. If they are missing or unavailable, the sample records `0` or `unknown` and continues cleanup normally.
+- The current optional debug/context reads include `sensor.<prefix>_ou_compressor_hz`,
+  `sensor.<prefix>_ou_cooling_rate`, `sensor.<prefix>_ou_heating_rate`, and the
+  accepted-sample debug helpers populated from them.
 - Static pressure remains a manual, on-demand diagnostic exercise and is not currently part of this sample package.
 - RPM/CFM remains the primary experimental detection metric in this sample.
 - Power/CFM remains secondary and observational rather than the primary detection signal.
