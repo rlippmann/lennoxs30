@@ -102,6 +102,10 @@ input_select:
       - heating
 
 input_text:
+  SYSTEM_PREFIX_filter_last_hvac_action:
+    name: SYSTEM_LABEL Filter Restriction Last HVAC Action
+    max: 32
+
   SYSTEM_PREFIX_filter_restriction_last_reject_reason:
     name: SYSTEM_LABEL Filter Restriction Last Reject Reason
     max: 255
@@ -205,6 +209,34 @@ input_number:
     max: 140
     step: 0.1
     unit_of_measurement: "°F"
+
+  SYSTEM_PREFIX_filter_last_compressor_hz:
+    name: SYSTEM_LABEL Filter Restriction Last Compressor Hz
+    min: 0
+    max: 200
+    step: 0.1
+    unit_of_measurement: Hz
+
+  SYSTEM_PREFIX_filter_last_cooling_rate:
+    name: SYSTEM_LABEL Filter Restriction Last Cooling Rate
+    min: 0
+    max: 100
+    step: 0.1
+    unit_of_measurement: "%"
+
+  SYSTEM_PREFIX_filter_last_heating_rate:
+    name: SYSTEM_LABEL Filter Restriction Last Heating Rate
+    min: 0
+    max: 100
+    step: 0.1
+    unit_of_measurement: "%"
+
+  SYSTEM_PREFIX_filter_last_diagnostic_level:
+    name: SYSTEM_LABEL Filter Restriction Last Diagnostic Level
+    min: 0
+    max: 10
+    step: 1
+    mode: box
 
   SYSTEM_PREFIX_filter_last_cool_rpm_per_cfm:
     name: SYSTEM_LABEL Filter Restriction Last Cool RPM per CFM
@@ -485,11 +517,8 @@ script:
 automation:
   - id: SYSTEM_PREFIX_lennox_filter_restriction_snapshot
     alias: SYSTEM_LABEL Lennox Filter Restriction Snapshot
-    # Disabled by default.
-    # Enable only after validating entity mappings and confirming diagnostics
-    # restore correctly.
-    # The collector should not be enabled without the watchdog.
-    initial_state: false
+    # Home Assistant restores the user's prior enabled/disabled state across
+    # restart. The collector should not be enabled without the watchdog.
     mode: single
     # Trigger note:
     # This automation polls every 10 minutes.
@@ -601,6 +630,9 @@ automation:
                 capture_attempt: "{{ repeat.index }}"
                 hvac_action: "{{ state_attr('climate.SYSTEM_PREFIX_zone_1', 'hvac_action') | default('') | lower }}"
                 demand: "{{ state_attr('climate.SYSTEM_PREFIX_zone_1', 'demand') | float(0) }}"
+                compressor_hz: "{{ state_attr('climate.SYSTEM_PREFIX_zone_1', 'compressor_hz') | float(0) }}"
+                cooling_rate: "{{ state_attr('climate.SYSTEM_PREFIX_zone_1', 'cooling_rate') | float(0) }}"
+                heating_rate: "{{ state_attr('climate.SYSTEM_PREFIX_zone_1', 'heating_rate') | float(0) }}"
                 rpm: "{{ states('sensor.SYSTEM_PREFIX_iu_indoor_blower_rpm') | float(0) }}"
                 cfm: "{{ states('sensor.SYSTEM_PREFIX_iu_blower_cfm_demand') | float(0) }}"
                 power_pct: "{{ states('sensor.SYSTEM_PREFIX_iu_indoor_blower_power') | float(0) }}"
@@ -666,6 +698,12 @@ automation:
                       data:
                         option: "{{ hvac_action }}"
 
+                    - action: input_text.set_value
+                      target:
+                        entity_id: input_text.SYSTEM_PREFIX_filter_last_hvac_action
+                      data:
+                        value: "{{ hvac_action }}"
+
                     - action: input_number.set_value
                       target:
                         entity_id: input_number.SYSTEM_PREFIX_filter_last_rpm
@@ -695,6 +733,30 @@ automation:
                         entity_id: input_number.SYSTEM_PREFIX_filter_last_outdoor_temp
                       data:
                         value: "{{ outdoor_temp }}"
+
+                    - action: input_number.set_value
+                      target:
+                        entity_id: input_number.SYSTEM_PREFIX_filter_last_compressor_hz
+                      data:
+                        value: "{{ compressor_hz }}"
+
+                    - action: input_number.set_value
+                      target:
+                        entity_id: input_number.SYSTEM_PREFIX_filter_last_cooling_rate
+                      data:
+                        value: "{{ cooling_rate }}"
+
+                    - action: input_number.set_value
+                      target:
+                        entity_id: input_number.SYSTEM_PREFIX_filter_last_heating_rate
+                      data:
+                        value: "{{ heating_rate }}"
+
+                    - action: input_number.set_value
+                      target:
+                        entity_id: input_number.SYSTEM_PREFIX_filter_last_diagnostic_level
+                      data:
+                        value: "{{ states('number.SYSTEM_PREFIX_diagnostic_level') | float(0) }}"
 
                     - choose:
                         - conditions:
@@ -851,16 +913,15 @@ automation:
 
   - id: SYSTEM_PREFIX_lennox_filter_restriction_watchdog
     alias: SYSTEM_LABEL Lennox Filter Restriction Watchdog
-    # Disabled by default.
-    # Enable whenever the snapshot collector is enabled.
-    # Its job is to restore the saved diagnostic level if a snapshot attempt
-    # fails before cleanup.
+    # Home Assistant restores the user's prior enabled/disabled state across
+    # restart. Enable whenever the snapshot collector is enabled. Its job is to
+    # restore the saved diagnostic level if a snapshot attempt fails before
+    # cleanup.
     # Preserve the prior last-sample mode when the watchdog fires, because a
     # watchdog intervention represents a failed attempt rather than a new sample.
     # If diagnostics were already at or above the target level before sampling,
     # the watchdog leaves the live diagnostic level untouched and only clears the
     # running/changed flags.
-    initial_state: false
     mode: single
     trigger:
       - platform: time_pattern

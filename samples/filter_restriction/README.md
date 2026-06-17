@@ -93,11 +93,16 @@ Do not run it immediately after package installation before valid samples exist.
 - For the tuning helpers and `last_sample_mode`, Home Assistant should restore user-changed values across restart rather than resetting them from YAML.
 - The generator derives the display label automatically from the system prefix.
   Example: `upstairs` -> `Upstairs`, `main_house` -> `Main House`.
+- Home Assistant should restore each automation's prior enabled/disabled state across restart rather than resetting it from YAML.
 - The snapshot collector automation polls every 10 minutes.
 - The snapshot cooldown helper controls eligibility; it does not control the trigger cadence.
 - When a polling check finds the system eligible, the automation waits 60 seconds before raising diagnostics.
 - After the required diagnostic entities populate, the automation waits an additional 15 seconds before beginning the bounded capture/retry loop.
 - Diagnostics are kept on only for the capture attempt and capture window, then restored as part of cleanup.
+- Static pressure remains a manual, on-demand diagnostic exercise and is not currently part of this sample package.
+- RPM/CFM remains the primary experimental detection metric in this sample.
+- Power/CFM remains secondary and observational rather than the primary detection signal.
+- Accepted-sample debug helpers record the last observed HVAC action, compressor Hz, cooling rate, heating rate, and live diagnostic level to make accepted captures easier to interpret during dogfooding.
 
 Use the helper script to generate an installation-specific package:
 
