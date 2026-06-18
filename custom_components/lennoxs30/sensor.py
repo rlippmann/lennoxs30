@@ -62,7 +62,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     sensor_list = []
     manager: Manager = hass.data[DOMAIN][entry.unique_id][MANAGER]
     for system in manager.api.system_list:
-
         if system.outdoorTemperatureStatus != LENNOX_STATUS_NOT_EXIST:
             _LOGGER.debug("Create S30OutdoorTempSensor system [%s]", system.sysId)
             sensor = S30OutdoorTempSensor(hass, manager, system)
