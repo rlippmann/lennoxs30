@@ -63,10 +63,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     sensor_list = []
     manager: Manager = hass.data[DOMAIN][entry.unique_id][MANAGER]
     for system in manager.api.system_list:
-        for zone in system.zone_list:
-            if zone.is_zone_active():
-                sensor_list.append(S30ZoneHumidityOperationSensor(hass, manager, system, zone))
-                sensor_list.append(S30ZoneAirDemandSensor(hass, manager, system, zone))
 
         if system.outdoorTemperatureStatus != LENNOX_STATUS_NOT_EXIST:
             _LOGGER.debug("Create S30OutdoorTempSensor system [%s]", system.sysId)
@@ -128,6 +124,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         if manager.create_sensors:
             for zone in system.zone_list:
                 if zone.is_zone_active():
+                    sensor_list.append(S30ZoneHumidityOperationSensor(hass, manager, system, zone))
+                    sensor_list.append(S30ZoneAirDemandSensor(hass, manager, system, zone))
                     _LOGGER.debug("Create S30TempSensor sensor system [%s] zone [%s]", system.sysId, zone.id)
                     sensor_list.append(S30TempSensor(hass, manager, system, zone))
                     _LOGGER.debug("Create S30HumSensor sensor system [%s] zone [%s]", system.sysId, zone.id)
