@@ -44,7 +44,6 @@ from .const import (
     UNIQUE_ID_SUFFIX_ACTIVE_ALERTS_SENSOR,
     UNIQUE_ID_SUFFIX_ALERT_SENSOR,
     UNIQUE_ID_SUFFIX_DIAG_SENSOR,
-    UNIQUE_ID_SUFFIX_ZONE_AIR_DEMAND,
     UNIQUE_ID_SUFFIX_ZONE_HUMIDITY_OPERATION,
 )
 from .helpers import helper_create_system_unique_id, helper_get_equipment_device_info, lennox_uom_to_ha_uom
@@ -125,7 +124,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             for zone in system.zone_list:
                 if zone.is_zone_active():
                     sensor_list.append(S30ZoneHumidityOperationSensor(hass, manager, system, zone))
-                    sensor_list.append(S30ZoneAirDemandSensor(hass, manager, system, zone))
                     _LOGGER.debug("Create S30TempSensor sensor system [%s] zone [%s]", system.sysId, zone.id)
                     sensor_list.append(S30TempSensor(hass, manager, system, zone))
                     _LOGGER.debug("Create S30HumSensor sensor system [%s] zone [%s]", system.sysId, zone.id)
@@ -640,27 +638,6 @@ class S30ZoneHumidityOperationSensor(S30ZoneRuntimeSensor):
         if isinstance(value, str):
             return value
         return None
-
-
-class S30ZoneAirDemandSensor(S30ZoneRuntimeSensor):
-    """Zone air demand sensor."""
-
-    _zone_update_fields = ["demand"]
-    _unique_id_suffix = UNIQUE_ID_SUFFIX_ZONE_AIR_DEMAND
-    _name_suffix = "air_demand"
-
-    @property
-    def native_value(self):
-        """Return native value of the sensor."""
-        value = self._zone.demand
-        if isinstance(value, (int, float)):
-            return value
-        return None
-
-    @property
-    def native_unit_of_measurement(self):
-        """Return native unit of measurement."""
-        return PERCENTAGE
 
 
 class S30InverterPowerSensor(S30BaseEntityMixin, SensorEntity):
