@@ -18,7 +18,7 @@ The package includes:
 - statistics sensors
 - template sensors
 - one binary sensor for possible filter restriction
-- one user-facing baseline reset script
+- one user-facing filter replacement event marker script
 - one snapshot collector automation
 - one watchdog automation
 
@@ -57,32 +57,29 @@ Before enabling the sample:
 - review airflow bounds against local equipment behavior
 - dogfood the package before relying on alerts or automations built on top of it
 
-## Establishing a Clean Filter Baseline
+## Trend And Step-Change Direction
 
-The monitor does not automatically know what a clean filter looks like.
+The package is moving toward trend and step-change monitoring rather than requiring a manual clean-filter baseline workflow before the monitor is useful.
 
-Recommended process:
+The collector can gather accepted samples without any user-marked replacement event. This means you can install the package, validate it, enable the collector and watchdog, and begin building history immediately.
 
-1. Install a new filter.
-2. Enable the collector and watchdog automations.
-3. Allow the system to collect multiple valid samples.
-4. Verify that sample counts have accumulated.
-5. Run the baseline script.
+## Mark Filter Replaced
 
-The baseline script records the current accepted measurements as the clean-filter reference used for future comparisons.
+The package includes a user-facing `Mark Filter Replaced` script.
 
-The script does not force a new sample capture. It uses previously collected valid sample data.
+This script is an event marker, not a required baseline-generation step.
 
-## Baseline Script
+When run, it:
 
-The package includes a user-facing script that records the current accepted measurements as the clean-filter baseline.
+- records the replacement timestamp
+- records a `filter_replaced` event marker
+- optionally snapshots the current rolling means into existing baseline/reference helpers when enough valid data already exists
 
-Run this script:
+The script does not force a new sample capture. It uses whatever accepted rolling-average data already exists at the time you mark the event.
 
-- after installing a new filter
-- after collecting sufficient valid samples
+Marking a replacement is still useful because it gives later analysis an explicit point for comparing pre/post filter behavior, even if the monitor had already been collecting data before the replacement.
 
-Do not run it immediately after package installation before valid samples exist.
+The older `Set Clean Filter Baseline` script name is retained only as a deprecated compatibility wrapper around `Mark Filter Replaced`.
 
 ## Build / Usage Notes
 
@@ -113,6 +110,7 @@ Do not run it immediately after package installation before valid samples exist.
 - RPM/CFM remains the primary experimental detection metric in this sample.
 - Power/CFM remains secondary and observational rather than the primary detection signal.
 - Accepted-sample debug helpers record the last observed HVAC action, compressor Hz, cooling rate, heating rate, and live diagnostic level to make accepted captures easier to interpret during dogfooding.
+- The replacement marker can optionally refresh existing baseline/reference helpers, but normal monitoring does not depend on that step.
 
 Use the helper script to generate an installation-specific package:
 

@@ -6,7 +6,7 @@
 # - statistics sensors
 # - template sensors
 # - binary sensor
-# - one user-facing filter replacement script
+# - one user-facing filter replacement event marker script
 # - snapshot automation
 # - watchdog automation
 #
@@ -90,8 +90,12 @@ input_datetime:
     name: SYSTEM_LABEL Filter Restriction Last Snapshot
     has_date: true
     has_time: true
+  SYSTEM_PREFIX_filter_last_replaced:
+    name: SYSTEM_LABEL Filter Restriction Filter Last Replaced
+    has_date: true
+    has_time: true
   SYSTEM_PREFIX_filter_last_changed:
-    name: SYSTEM_LABEL Filter Restriction Filter Last Changed
+    name: SYSTEM_LABEL Filter Restriction Filter Last Changed (Legacy)
     has_date: true
     has_time: true
 
@@ -104,6 +108,10 @@ input_select:
       - heating
 
 input_text:
+  SYSTEM_PREFIX_filter_last_event:
+    name: SYSTEM_LABEL Filter Restriction Last Event
+    max: 64
+
   SYSTEM_PREFIX_filter_last_hvac_action:
     name: SYSTEM_LABEL Filter Restriction Last HVAC Action
     max: 32
@@ -359,6 +367,10 @@ sensor:
 
 template:
   - sensor:
+      - name: SYSTEM_LABEL Filter Restriction Last Replaced
+        unique_id: SYSTEM_PREFIX_filter_restriction_last_replaced
+        state: "{{ states('input_datetime.SYSTEM_PREFIX_filter_last_replaced') }}"
+
       - name: SYSTEM_LABEL Filter Restriction Last Changed
         unique_id: SYSTEM_PREFIX_filter_restriction_last_changed
         state: "{{ states('input_datetime.SYSTEM_PREFIX_filter_last_changed') }}"
@@ -462,12 +474,26 @@ template:
           {% endif %}
 
 script:
-  SYSTEM_PREFIX_set_clean_filter_baseline:
-    alias: "SYSTEM_LABEL Filter Restriction Monitor: Set Clean Filter Baseline"
+  SYSTEM_PREFIX_mark_filter_replaced:
+    alias: "SYSTEM_LABEL Filter Restriction Monitor: Mark Filter Replaced"
     mode: single
     sequence:
-      # One physical filter replacement action updates whichever mode baselines
-      # currently have enough valid rolling-average data.
+      # This event marker is optional. Monitoring and sample collection work
+      # without it, but the timestamp/event and any captured references can
+      # help later compare pre/post replacement behavior.
+      - action: input_datetime.set_datetime
+        target:
+          entity_id: input_datetime.SYSTEM_PREFIX_filter_last_replaced
+        data:
+          datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
+
+      - action: input_text.set_value
+        target:
+          entity_id: input_text.SYSTEM_PREFIX_filter_last_event
+        data:
+          value: "filter_replaced"
+
+      # Preserve the legacy timestamp helper for backward compatibility.
       - action: input_datetime.set_datetime
         target:
           entity_id: input_datetime.SYSTEM_PREFIX_filter_last_changed
@@ -515,6 +541,12 @@ script:
                   entity_id: input_number.SYSTEM_PREFIX_filter_baseline_heat_power_per_cfm
                 data:
                   value: "{{ states('sensor.SYSTEM_PREFIX_filter_restriction_heat_power_per_cfm_mean') | float(0) }}"
+
+  SYSTEM_PREFIX_set_clean_filter_baseline:
+    alias: "SYSTEM_LABEL Filter Restriction Monitor: Set Clean Filter Baseline (Deprecated)"
+    mode: single
+    sequence:
+      - action: script.SYSTEM_PREFIX_mark_filter_replaced
 
 automation:
   - id: SYSTEM_PREFIX_lennox_filter_restriction_snapshot
