@@ -94,10 +94,6 @@ input_datetime:
     name: SYSTEM_LABEL Filter Restriction Filter Last Replaced
     has_date: true
     has_time: true
-  SYSTEM_PREFIX_filter_last_changed:
-    name: SYSTEM_LABEL Filter Restriction Filter Last Changed (Legacy)
-    has_date: true
-    has_time: true
 
 input_select:
   SYSTEM_PREFIX_filter_last_sample_mode:
@@ -371,10 +367,6 @@ template:
         unique_id: SYSTEM_PREFIX_filter_restriction_last_replaced
         state: "{{ states('input_datetime.SYSTEM_PREFIX_filter_last_replaced') }}"
 
-      - name: SYSTEM_LABEL Filter Restriction Last Changed
-        unique_id: SYSTEM_PREFIX_filter_restriction_last_changed
-        state: "{{ states('input_datetime.SYSTEM_PREFIX_filter_last_changed') }}"
-
       - name: SYSTEM_LABEL Filter Restriction Last Snapshot
         unique_id: SYSTEM_PREFIX_filter_restriction_last_snapshot
         state: "{{ states('input_datetime.SYSTEM_PREFIX_filter_last_snapshot') }}"
@@ -493,13 +485,6 @@ script:
         data:
           value: "filter_replaced"
 
-      # Preserve the legacy timestamp helper for backward compatibility.
-      - action: input_datetime.set_datetime
-        target:
-          entity_id: input_datetime.SYSTEM_PREFIX_filter_last_changed
-        data:
-          datetime: "{{ now().strftime('%Y-%m-%d %H:%M:%S') }}"
-
       - choose:
           - conditions:
               - condition: template
@@ -542,12 +527,6 @@ script:
                 data:
                   value: "{{ states('sensor.SYSTEM_PREFIX_filter_restriction_heat_power_per_cfm_mean') | float(0) }}"
 
-  SYSTEM_PREFIX_set_clean_filter_baseline:
-    alias: "SYSTEM_LABEL Filter Restriction Monitor: Set Clean Filter Baseline (Deprecated)"
-    mode: single
-    sequence:
-      - action: script.SYSTEM_PREFIX_mark_filter_replaced
-
 automation:
   - id: SYSTEM_PREFIX_lennox_filter_restriction_snapshot
     alias: SYSTEM_LABEL Lennox Filter Restriction Snapshot
@@ -555,7 +534,7 @@ automation:
     # restart. The collector should not be enabled without the watchdog.
     mode: single
     # Trigger note:
-    # This automation polls every 10 minutes.
+    # This automation checks eligibility hourly at minute 17.
     # The trigger cadence is not the rate limiter; repeated valid cycles are
     # controlled by the snapshot cooldown helper.
     # A short stabilization delay is applied before diagnostics are raised,
@@ -563,7 +542,7 @@ automation:
     # before capture begins.
     trigger:
       - platform: time_pattern
-        minutes: "/10"
+        minutes: "17"
     variables:
       pre_hvac_action: "{{ state_attr('climate.SYSTEM_PREFIX_zone_1', 'hvac_action') | default('') | lower }}"
       cooldown_hours: "{{ states('input_number.SYSTEM_PREFIX_filter_snapshot_cooldown_hours') | float(23) }}"

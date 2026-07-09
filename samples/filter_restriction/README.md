@@ -57,11 +57,13 @@ Before enabling the sample:
 - review airflow bounds against local equipment behavior
 - dogfood the package before relying on alerts or automations built on top of it
 
-## Trend And Step-Change Direction
+## Continuous Sample Collection
 
-The package is moving toward trend and step-change monitoring rather than requiring a manual clean-filter baseline workflow before the monitor is useful.
+The package continuously collects accepted samples when the collector and watchdog are enabled and the system meets the capture conditions.
 
 The collector can gather accepted samples without any user-marked replacement event. This means you can install the package, validate it, enable the collector and watchdog, and begin building history immediately.
+
+The current implementation does not perform true trend or step-change detection by itself. Instead, it records rolling sample data and can optionally record filter replacement events to support later comparison of pre/post replacement behavior.
 
 ## Mark Filter Replaced
 
@@ -73,13 +75,11 @@ When run, it:
 
 - records the replacement timestamp
 - records a `filter_replaced` event marker
-- optionally snapshots the current rolling means into existing baseline/reference helpers when enough valid data already exists
+- optionally snapshots the current rolling means into existing baseline helpers when enough valid data already exists
 
 The script does not force a new sample capture. It uses whatever accepted rolling-average data already exists at the time you mark the event.
 
 Marking a replacement is still useful because it gives later analysis an explicit point for comparing pre/post filter behavior, even if the monitor had already been collecting data before the replacement.
-
-The older `Set Clean Filter Baseline` script name is retained only as a deprecated compatibility wrapper around `Mark Filter Replaced`.
 
 ## Build / Usage Notes
 
@@ -91,8 +91,8 @@ The older `Set Clean Filter Baseline` script name is retained only as a deprecat
 - The generator derives the display label automatically from the system prefix.
   Example: `upstairs` -> `Upstairs`, `main_house` -> `Main House`.
 - Home Assistant should restore each automation's prior enabled/disabled state across restart rather than resetting it from YAML.
-- The snapshot collector automation polls every 10 minutes.
-- The snapshot cooldown helper controls eligibility; it does not control the trigger cadence.
+- The snapshot collector automation checks eligibility hourly at minute `17`.
+- The snapshot cooldown helper controls actual accepted sample frequency; it does not control the trigger cadence.
 - When a polling check finds the system eligible, the automation waits 60 seconds before raising diagnostics.
 - After the required diagnostic entities populate, the automation waits an additional 15 seconds before beginning the bounded capture/retry loop.
 - Diagnostics are kept on only for the capture attempt and capture window, then restored as part of cleanup.
@@ -110,7 +110,7 @@ The older `Set Clean Filter Baseline` script name is retained only as a deprecat
 - RPM/CFM remains the primary experimental detection metric in this sample.
 - Power/CFM remains secondary and observational rather than the primary detection signal.
 - Accepted-sample debug helpers record the last observed HVAC action, compressor Hz, cooling rate, heating rate, and live diagnostic level to make accepted captures easier to interpret during dogfooding.
-- The replacement marker can optionally refresh existing baseline/reference helpers, but normal monitoring does not depend on that step.
+- The replacement marker can optionally refresh existing baseline helpers, but normal monitoring does not depend on that step.
 
 Use the helper script to generate an installation-specific package:
 
