@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
@@ -11,8 +9,6 @@ from lennoxs30api.s30api_async import LennoxBle, lennox_equipment, lennox_system
 
 from .const import LENNOX_DOMAIN, LENNOX_MFG
 from .helpers import helper_create_zone_entity_name
-
-_LOGGER = logging.getLogger(__name__)
 
 
 class Device:
@@ -293,13 +289,6 @@ class S30ZoneThermostat(Device):
         """Register the device with HASS."""
         device_registry = dr.async_get(self._hass)
         name = helper_create_zone_entity_name(self._system, self._zone)
-        if self._zone.name is None or str(self._zone.name).strip() == "":
-            _LOGGER.warning(
-                "register_device using fallback zone name for sysId [%s] zone_id [%s] generated_name [%s]",
-                self._system.sysId,
-                self._zone.id,
-                name,
-            )
 
         device_registry.async_get_or_create(
             config_entry_id=self._config_entry.entry_id,
