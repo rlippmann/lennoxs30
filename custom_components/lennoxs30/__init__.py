@@ -74,6 +74,7 @@ from .device import (
     S30ZoneThermostat,
     S40BleDevice,
 )
+from .helpers import helper_create_zone_entity_name
 from .util import dict_redact_fields
 
 DOMAIN = LENNOX_DOMAIN
@@ -690,6 +691,15 @@ class Manager:
 
             for zone in system.zone_list:
                 if zone.is_zone_active():
+                    if zone.name is None or str(zone.name).strip() == "":
+                        fallback_name = helper_create_zone_entity_name(system, zone)
+                        _LOGGER.warning(
+                            "create_devices active zone missing name host [%s] sysId [%s] zone_id [%s] using fallback [%s]; this usually indicates incomplete zone config message delivery",
+                            self._ip_address,
+                            system.sysId,
+                            zone.id,
+                            fallback_name,
+                        )
                     z: S30ZoneThermostat = S30ZoneThermostat(self._hass, self.config_entry, system, zone, s30)
                     z.register_device()
 

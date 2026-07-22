@@ -18,6 +18,7 @@ from custom_components.lennoxs30 import Manager
 from custom_components.lennoxs30.const import LENNOX_DOMAIN
 from custom_components.lennoxs30.helpers import (
     helper_create_equipment_entity_name,
+    helper_create_zone_entity_name,
     helper_get_equipment_device_info,
     lennox_uom_to_ha_uom,
 )
@@ -105,3 +106,19 @@ async def test_helpers_create_equipment_entity_name(manager: Manager):
     assert helper_create_equipment_entity_name(system, equipment, "test..") == f"{system.name}_iu_test".replace(" ", "_")
 
     assert helper_create_equipment_entity_name(system, equipment, "test - h") == f"{system.name}_iu_test_h".replace(" ", "_")
+
+
+@pytest.mark.asyncio()
+async def test_helpers_create_zone_entity_name(manager: Manager):
+    """Test the helper to create zone names with and without fallbacks."""
+    system = manager.api.system_list[0]
+    zone = system.zone_list[0]
+
+    zone.name = "Main Floor"
+    assert helper_create_zone_entity_name(system, zone) == f"{system.name}_Main Floor"
+
+    zone.name = None
+    assert helper_create_zone_entity_name(system, zone) == f"{system.name}_Zone_{zone.id}"
+
+    zone.name = "   "
+    assert helper_create_zone_entity_name(system, zone) == f"{system.name}_Zone_{zone.id}"
