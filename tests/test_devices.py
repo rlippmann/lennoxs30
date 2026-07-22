@@ -6,6 +6,8 @@
 # pylint: disable=protected-access
 # pylint: disable=line-too-long
 
+import logging
+
 from unittest.mock import patch
 
 import pytest
@@ -465,6 +467,30 @@ async def test_create_device_no_equipment(hass, manager_system_04_furn_ac_zoning
             break
         assert elem[0] == DOMAIN
         assert elem[1] == manager.api.system_list[0].unique_id + "_iu"
+
+
+@pytest.mark.asyncio()
+async def test_create_devices_zone_name_missing(hass, manager: Manager, caplog):
+    """Create devices should continue with a fallback zone name when zone.name is missing."""
+    device_registry = dr.async_get(hass)
+    system = manager.api.system_list[0]
+    zone: lennox_zone = system.zone_list[0]
+    zone.name = None
+
+    with patch.object(device_registry, "async_get_or_create") as mock_create_device:
+        with caplog.at_level(logging.WARNING):
+            caplog.clear()
+            await manager.create_devices()
+
+    zone_call = None
+    for call in mock_create_device.mock_calls:
+        if call.kwargs.get("model") == "thermostat":
+            zone_call = call
+            break
+
+    assert zone_call is not None
+    assert zone_call.kwargs["name"] == f"{system.name}_Zone_{zone.id}"
+    assert "create_devices active zone missing name" in caplog.text
 
 
 @pytest.mark.asyncio()
