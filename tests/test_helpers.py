@@ -113,6 +113,7 @@ async def test_helpers_create_zone_entity_name(manager: Manager):
     """Test the helper to create zone names with and without fallbacks."""
     system = manager.api.system_list[0]
     zone = system.zone_list[0]
+    original_system_name = system.name
 
     zone.name = "Main Floor"
     assert helper_create_zone_entity_name(system, zone) == f"{system.name}_Main Floor"
@@ -122,3 +123,12 @@ async def test_helpers_create_zone_entity_name(manager: Manager):
 
     zone.name = "   "
     assert helper_create_zone_entity_name(system, zone) == f"{system.name}_Zone_{zone.id}"
+
+    zone.name = "Main Floor"
+    system.name = None
+    assert helper_create_zone_entity_name(system, zone) == f"system_{system.sysId}_Main Floor"
+
+    system.name = "   "
+    assert helper_create_zone_entity_name(system, zone) == f"system_{system.sysId}_Main Floor"
+
+    system.name = original_system_name
