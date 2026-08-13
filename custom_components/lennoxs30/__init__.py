@@ -780,13 +780,17 @@ class Manager:
                 if lsystem.config_complete() is False:
                     continue
                 numZones = len(lsystem.zone_list)
+                numActiveZones = sum(1 for z in lsystem.zone_list if z.is_zone_active())
+                numZoneNames = sum(1 for z in lsystem.zone_list if z.is_zone_active() and z.name is not None and str(z.name).strip() != "")
                 _LOGGER.debug(
-                    "configuration_initialization host [%s] wait for zones system [%s] numZone [%d]",
+                    "configuration_initialization host [%s] wait for zones system [%s] numZone [%d] activeZones [%d] namedZones [%d]",
                     self._ip_address,
                     lsystem.sysId,
                     numZones,
+                    numActiveZones,
+                    numZoneNames,
                 )
-                if numZones > 0:
+                if numActiveZones > 0 and numZoneNames == numActiveZones:
                     systemsWithZones += 1
             if got_message is False:
                 loops += 1
