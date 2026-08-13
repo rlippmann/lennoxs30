@@ -108,6 +108,25 @@ async def test_manager_configuration_initialization(manager: Manager, caplog):
                     assert "Timeout waiting for configuration data from Lennox - this sometimes happens" in ex.message
 
 
+@pytest.mark.asyncio()
+async def test_manager_configuration_initialization_ignores_none_zone_names(manager: Manager):
+    system: lennox_system = manager.api.system_list[0]
+    system.cloud_status = "online"
+    active_zone = next(zone for zone in system.zone_list if zone.is_zone_active())
+    active_zone.name = None
+    manager._conf_init_wait_time = 1
+
+    with patch.object(manager, "messagePump") as messagePump:
+        messagePump.return_value = False
+        with patch.object(system, "config_complete") as config_complete:
+            config_complete.return_value = True
+            with patch("asyncio.sleep"):
+                with pytest.raises(S30Exception) as exc_info:
+                    await manager.configuration_initialization()
+
+    assert exc_info.value.error_code == EC_CONFIG_TIMEOUT
+
+
 class CloudPresence:
     """Helper class for testing"""
 
