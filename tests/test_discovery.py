@@ -2,9 +2,11 @@
 
 from ipaddress import IPv4Address
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.config_entries import SOURCE_ZEROCONF
+from homeassistant.data_entry_flow import FlowResultType
 
 from custom_components.lennoxs30.config_flow import Lennoxs30ConfigFlow
 from custom_components.lennoxs30.discovery import (
@@ -84,6 +86,34 @@ async def test_zeroconf_does_not_match_cloud_entry(hass):
     assert result["step_id"] == "advanced"
     assert flow.config_input["host"] == "lennox-s40-bt23m54549.local"
     assert flow.config_input["thermostat_id"] == "thermostat-1"
+
+
+@pytest.mark.asyncio
+async def test_zeroconf_full_home_assistant_flow(hass):
+    with patch("custom_components.lennoxs30.async_setup_entry", new=AsyncMock(return_value=True)):
+        result = await hass.config_entries.flow.async_init(
+            "lennoxs30", context={"source": SOURCE_ZEROCONF}, data=service_info(properties={"id": "thermostat-1"})
+        )
+        assert result["type"] is FlowResultType.FORM
+        assert result["step_id"] == "advanced"
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {
+                "scan_interval": 1,
+                "fast_scan_interval": 0.75,
+                "fast_scan_count": 10,
+                "init_wait_time": 30,
+                "timeout": 30,
+                "pii_in_message_logs": False,
+                "message_debug_logging": True,
+                "log_messages_to_file": False,
+                "message_debug_file": "",
+            },
+        )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"]["host"] == "lennox-s40-bt23m54549.local"
+    assert result["data"]["mdns_port"] == 443
 
 
 @pytest.mark.asyncio
