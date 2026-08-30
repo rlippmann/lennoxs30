@@ -137,6 +137,42 @@ async def test_zeroconf_new_ip_uses_api_identity_to_migrate(hass):
     assert updated["keep"] == "me"
 
 
+@pytest.mark.asyncio
+async def test_zeroconf_probe_failure_keeps_discovery_available(hass):
+    flow = Lennoxs30ConfigFlow()
+    flow.hass = hass
+
+    with patch.object(hass.config_entries, "async_entries", return_value=[]), patch.object(
+        flow, "_probe_discovered_identity", return_value=None
+    ) as probe, patch.object(flow, "async_set_unique_id"), patch.object(flow, "_abort_if_unique_id_configured"):
+        result = await flow.async_step_zeroconf(service_info(properties={}))
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "advanced"
+    assert flow.config_input["host"] == "lennox-s40-bt23m54549.local"
+    assert "thermostat_id" not in flow.config_input
+    probe.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_zeroconf_rediscovery_updates_loaded_manager(hass):
+    entry = MagicMock()
+    entry.unique_id = "existing-entry"
+    entry.data = {"cloud_connection": False, "host": "lennox-s40.local", "thermostat_id": "thermostat-1"}
+    manager = MagicMock()
+    hass.data["lennoxs30"] = {"existing-entry": {"manager": manager}}
+    flow = Lennoxs30ConfigFlow()
+    flow.hass = hass
+
+    with patch.object(hass.config_entries, "async_entries", return_value=[entry]), patch.object(hass.config_entries, "async_update_entry"):
+        result = await flow.async_step_zeroconf(
+            service_info(host="192.168.1.61", hostname="Lennox-S40.local.", properties={"id": "thermostat-1"})
+        )
+
+    assert result["reason"] == "already_configured"
+    manager.async_update_connection_target.assert_called_once_with("lennox-s40.local", "192.168.1.61", 443)
+
+
 def test_manager_target_update_replaces_stale_runtime_ip(manager):
     manager.api.isLANConnection = True
     manager.async_update_connection_target("lennox-s40-bt23m54601.local", "192.168.1.61", 443)
