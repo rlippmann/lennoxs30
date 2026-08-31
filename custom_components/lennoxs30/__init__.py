@@ -12,7 +12,9 @@ import time
 from asyncio.locks import Event
 
 import voluptuous as vol
+from homeassistant.components import zeroconf
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
+from homeassistant.components.zeroconf.discovery import info_from_service
 from homeassistant.const import (
     CONF_EMAIL,
     CONF_HOST,
@@ -31,6 +33,8 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import StateInfo
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM
+from zeroconf import const as zeroconf_const
+from zeroconf.asyncio import AsyncServiceInfo
 from lennoxs30api import (
     EC_HTTP_ERR,
     EC_LOGIN,
@@ -78,6 +82,7 @@ from .device import (
 )
 from .helpers import helper_create_zone_entity_name
 from .util import dict_redact_fields
+from .discovery import ZEROCONF_SERVICE
 
 DOMAIN = LENNOX_DOMAIN
 DOMAIN_STATE = "lennoxs30.state"
@@ -154,9 +159,9 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup(hass: HomeAssistant, config: ConfigType):
     """Import config as config entry."""
     hass.data[DOMAIN] = {}
+    await _async_migrate_cached_zeroconf_entries(hass)
     if config.get(DOMAIN) is None:
         return True
-
     _LOGGER.warning(
         "Configuration of the LennoxS30 platform in YAML is deprecated "
         "and will be removed; Your existing configuration "
@@ -215,6 +220,24 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
         _upgrade_config(migration_data, 1)
         create_migration_task(hass, migration_data)
     return True
+
+
+async def _async_migrate_cached_zeroconf_entries(hass: HomeAssistant) -> None:
+    """Migrate local entries for services already present in mDNS cache."""
+    from .config_flow import async_migrate_zeroconf_entry
+
+    aiozc = await zeroconf.async_get_async_instance(hass)
+    for record in aiozc.zeroconf.cache.async_all_by_details(
+        ZEROCONF_SERVICE,
+        zeroconf_const._TYPE_PTR,
+        zeroconf_const._CLASS_IN,
+    ):
+        service = AsyncServiceInfo(ZEROCONF_SERVICE, record.alias)
+        if not service.load_from_cache(aiozc.zeroconf):
+            continue
+        info = info_from_service(service)
+        if info:
+            await async_migrate_zeroconf_entry(hass, info)
 
 
 def create_migration_task(hass, migration_data):

@@ -64,6 +64,37 @@ DOMAIN = "lennoxs30"
 _LOGGER = logging.getLogger(__name__)
 
 
+async def async_migrate_zeroconf_entry(hass: HomeAssistant, discovery_info: ZeroconfServiceInfo) -> bool:
+    """Migrate an existing local entry from an IP address to mDNS data."""
+    if discovery_info.type != ZEROCONF_SERVICE:
+        return False
+
+    flow = Lennoxs30ConfigFlow()
+    flow.hass = hass
+    hostname = discovered_host(discovery_info)
+    port = discovered_port(discovery_info)
+    identity = advertised_identity(discovery_info)
+    if identity is None:
+        return False
+
+    existing = flow._find_discovered_entry(hostname, discovery_info.host, identity)
+    if existing is None:
+        return False
+
+    data = {
+        **existing.data,
+        CONF_HOST: hostname,
+        CONF_MDNS_PORT: port,
+        CONF_THERMOSTAT_ID: identity,
+    }
+    hass.config_entries.async_update_entry(existing, data=data)
+    manager = hass.data.get(DOMAIN, {}).get(existing.unique_id, {}).get(MANAGER)
+    if manager:
+        manager.async_update_connection_target(hostname, discovery_info.host, port)
+    _LOGGER.info("Migrated Lennox entry %s to mDNS hostname %s", existing.entry_id, hostname)
+    return True
+
+
 STEP_ONE = vol.Schema(
     {
         vol.Required(CONF_LOCAL_CONNECTION, default=True): cv.boolean,
