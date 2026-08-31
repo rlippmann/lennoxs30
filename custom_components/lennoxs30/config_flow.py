@@ -23,6 +23,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 from lennoxs30api.s30exception import EC_LOGIN, S30Exception
 
@@ -268,6 +269,7 @@ class Lennoxs30ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def _find_discovered_entry(self, hostname: str, ip_address: str, identity: str | None):
         """Find an existing local entry represented by an mDNS result."""
+        device_registry = dr.async_get(self.hass)
         for entry in self.hass.config_entries.async_entries(DOMAIN):
             data = entry.data
             if data.get(CONF_CLOUD_CONNECTION) is not False or CONF_HOST not in data:
@@ -278,6 +280,12 @@ class Lennoxs30ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             manager = self.hass.data.get(DOMAIN, {}).get(entry.unique_id, {}).get(MANAGER)
             if manager and any(system.unique_id == identity for system in manager.api.system_list):
                 return entry
+            if identity:
+                for device in device_registry.devices.values():
+                    if entry.entry_id not in device.config_entries:
+                        continue
+                    if any(domain == DOMAIN and identifier == identity for domain, identifier in device.identifiers):
+                        return entry
         return None
 
     async def async_step_advanced(self, user_input: None | dict[str, Any] = None) -> ConfigFlowResult:

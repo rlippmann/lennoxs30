@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import re
 from typing import Any
 
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
@@ -41,6 +42,14 @@ def advertised_identity(info: ZeroconfServiceInfo) -> str | None:
         value = properties.get(key)
         if value is not None and str(value).strip():
             return str(value).strip()
+
+    # Lennox includes the thermostat identifier in the service instance name,
+    # e.g. ``_BT23M54601_1._icomfort4...``. The trailing numeric component is
+    # an mDNS instance discriminator and is not part of the device identity.
+    instance = info.name.split(".", 1)[0].strip("_")
+    match = re.fullmatch(r"(BT[A-Z0-9]+?)(?:_\d+)?", instance, re.IGNORECASE)
+    if match:
+        return match.group(1)
     return None
 
 
