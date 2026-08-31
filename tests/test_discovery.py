@@ -1,5 +1,6 @@
 """Tests for Lennox mDNS discovery and migration."""
 
+import json
 from ipaddress import IPv4Address
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -17,6 +18,14 @@ from custom_components.lennoxs30.discovery import (
     discovered_port,
     runtime_target,
 )
+
+
+def test_manifest_declares_zeroconf_dependency():
+    with open("custom_components/lennoxs30/manifest.json", encoding="utf-8") as manifest_file:
+        manifest = json.load(manifest_file)
+
+    assert "zeroconf" in manifest["dependencies"]
+    assert ZEROCONF_SERVICE in manifest["zeroconf"]
 
 
 def service_info(**kwargs):
@@ -108,6 +117,7 @@ async def test_zeroconf_does_not_match_cloud_entry(hass):
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("socket_enabled")
 async def test_zeroconf_full_home_assistant_flow(hass):
     with patch("custom_components.lennoxs30.async_setup_entry", new=AsyncMock(return_value=True)):
         result = await hass.config_entries.flow.async_init(
