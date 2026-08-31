@@ -102,8 +102,9 @@ async def test_zeroconf_does_not_match_cloud_entry(hass):
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("socket_enabled")
-async def test_zeroconf_full_home_assistant_flow(hass):
+async def test_zeroconf_full_home_assistant_flow(hass, mock_zeroconf):
+    mock_zeroconf.return_value.async_unregister_all_services = AsyncMock()
+    mock_zeroconf.return_value._async_close = AsyncMock()
     with patch("custom_components.lennoxs30.async_setup_entry", new=AsyncMock(return_value=True)):
         result = await hass.config_entries.flow.async_init(
             "lennoxs30", context={"source": SOURCE_ZEROCONF}, data=service_info(properties={"id": "thermostat-1"})
