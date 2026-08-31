@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.config_entries import SOURCE_ZEROCONF
 from homeassistant.data_entry_flow import FlowResultType
-
 from custom_components.lennoxs30.config_flow import Lennoxs30ConfigFlow
 from custom_components.lennoxs30.discovery import (
     ZEROCONF_SERVICE,
@@ -45,6 +44,11 @@ def test_discovery_defaults_port_and_handles_missing_txt():
     info = service_info(port=None, properties={})
     assert discovered_port(info) == 443
     assert advertised_identity(info) is None
+
+
+def test_discovery_extracts_identity_from_service_instance_name():
+    info = service_info(properties={}, name="_BT23M54601_1._icomfort4._res._lii._http._tcp.local.")
+    assert advertised_identity(info) == "BT23M54601"
 
 
 @pytest.mark.asyncio
@@ -171,6 +175,50 @@ async def test_zeroconf_rediscovery_updates_loaded_manager(hass):
 
     assert result["reason"] == "already_configured"
     manager.async_update_connection_target.assert_called_once_with("lennox-s40.local", "192.168.1.61", 443)
+
+
+@pytest.mark.asyncio
+async def test_zeroconf_matches_existing_device_registry_identity(hass):
+    entry = MagicMock()
+    entry.entry_id = "existing-entry-id"
+    entry.unique_id = "lennoxs30_192.168.1.250"
+    entry.data = {"cloud_connection": False, "host": "192.168.1.250"}
+    hass.data["lennoxs30"] = {}
+    registry = SimpleNamespace(
+        devices={
+            "device": SimpleNamespace(
+                config_entries={entry.entry_id},
+                identifiers={("lennoxs30", "BT23M54601")},
+            )
+        }
+    )
+    assert (
+        advertised_identity(
+            service_info(
+                name="_BT23M54601_1._icomfort4._res._lii._http._tcp.local.",
+                properties={},
+            )
+        )
+        == "BT23M54601"
+    )
+    flow = Lennoxs30ConfigFlow()
+    flow.hass = hass
+
+    with patch.object(hass.config_entries, "async_entries", return_value=[entry]), patch.object(
+        hass.config_entries, "async_update_entry"
+    ) as update_entry, patch("custom_components.lennoxs30.config_flow.dr.async_get", return_value=registry):
+        result = await flow.async_step_zeroconf(
+            service_info(
+                host="192.168.1.198",
+                hostname="Lennox-S40-BT23M54601.local.",
+                name="_BT23M54601_1._icomfort4._res._lii._http._tcp.local.",
+                properties={},
+            )
+        )
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "already_configured"
+    assert update_entry.call_args.kwargs["data"]["host"] == "lennox-s40-bt23m54601.local"
 
 
 def test_manager_target_update_replaces_stale_runtime_ip(manager):
