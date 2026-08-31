@@ -28,6 +28,12 @@ def test_manifest_declares_zeroconf_dependency():
 
     assert "zeroconf" in manifest["dependencies"]
     assert ZEROCONF_SERVICE in manifest["zeroconf"]
+    # Some Lennox thermostats incorrectly arrive as _http services with the
+    # Lennox service type embedded in the instance name.
+    assert {
+        "name": "*_icomfort4._res._lii._http._tcp.local.*",
+        "type": HTTP_SERVICE,
+    } in manifest["zeroconf"]
 
 
 def service_info(**kwargs):
@@ -193,6 +199,39 @@ async def test_malformed_http_zeroconf_flow_is_supported(hass, mock_zeroconf):
 
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "advanced"
+
+
+@pytest.mark.asyncio
+async def test_malformed_http_existing_entry_migrates(hass):
+    entry = MagicMock()
+    entry.unique_id = "existing-entry"
+    entry.data = {
+        "cloud_connection": False,
+        "host": "192.168.1.40",
+        "thermostat_id": "BT23M54549",
+        "keep": "me",
+    }
+    malformed_info = service_info(
+        type=HTTP_SERVICE,
+        host="192.168.1.198",
+        hostname="Lennox-S40-BT23M54549.local.",
+        name="_BT23M54549_1._icomfort4._res._lii._http._tcp.local._http._tcp.local.",
+        properties={},
+    )
+    flow = Lennoxs30ConfigFlow()
+    flow.hass = hass
+
+    with patch.object(hass.config_entries, "async_entries", return_value=[entry]), patch.object(
+        hass.config_entries, "async_update_entry"
+    ) as update_entry:
+        result = await flow.async_step_zeroconf(malformed_info)
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "already_configured"
+    updated = update_entry.call_args.kwargs["data"]
+    assert updated["host"] == "lennox-s40-bt23m54549.local"
+    assert updated["mdns_port"] == 443
+    assert updated["keep"] == "me"
 
 
 @pytest.mark.asyncio
