@@ -82,7 +82,7 @@ def _update_discovered_entry(
     identity: str | None,
 ) -> None:
     """Update discovery data and promote a stable thermostat identity."""
-    update_kwargs: dict[str, Any] = {"data": data}
+    update_kwargs: dict[str, Any] = {"data": data, "title": data[CONF_HOST]}
     unique_id = _stable_unique_id(identity)
     if unique_id and entry.unique_id != unique_id:
         collision = any(
