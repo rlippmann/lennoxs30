@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-import asyncio
 import re
 from typing import Any
 
@@ -98,12 +97,7 @@ class LennoxServiceListener(ServiceListener):
         """Resolve and migrate a discovered service."""
         if not is_lennox_service(type_, name):
             return
-        service = None
-        for _ in range(4):
-            service = await self._aiozc.async_get_service_info(type_, name)
-            if service:
-                break
-            await asyncio.sleep(0.5)
+        service = await self._aiozc.async_get_service_info(type_, name)
         if not service:
             return
         info = info_from_service(service)
