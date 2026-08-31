@@ -10,7 +10,7 @@ from homeassistant.config_entries import SOURCE_ZEROCONF
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.lennoxs30 import async_setup
-from custom_components.lennoxs30.config_flow import Lennoxs30ConfigFlow
+from custom_components.lennoxs30.config_flow import Lennoxs30ConfigFlow, async_migrate_zeroconf_entry
 from custom_components.lennoxs30.discovery import (
     LennoxServiceListener,
     HTTP_SERVICE,
@@ -134,6 +134,31 @@ async def test_zeroconf_existing_ip_entry_migrates_without_duplicate(hass):
 
 
 @pytest.mark.asyncio
+async def test_zeroconf_migration_updates_real_config_entry(hass):
+    entry = MockConfigEntry(
+        domain="lennoxs30",
+        title="192.168.1.40",
+        unique_id="lennoxs30_192.168.1.40",
+        data={"cloud_connection": False, "host": "192.168.1.40", "keep": "me"},
+    )
+    entry.add_to_hass(hass)
+    entry_id = entry.entry_id
+    flow = Lennoxs30ConfigFlow()
+    flow.hass = hass
+
+    result = await flow.async_step_zeroconf(service_info())
+
+    assert result["type"] == "abort"
+    assert result["reason"] == "already_configured"
+    assert entry.entry_id == entry_id
+    assert entry.title == "lennox-s40-bt23m54549.local"
+    assert entry.unique_id == "lennoxs30_BT23M54549"
+    assert entry.data["host"] == "lennox-s40-bt23m54549.local"
+    assert entry.data["mdns_port"] == 443
+    assert entry.data["keep"] == "me"
+
+
+@pytest.mark.asyncio
 async def test_zeroconf_does_not_match_cloud_entry(hass):
     entry = MockConfigEntry(
         domain="lennoxs30",
@@ -151,6 +176,22 @@ async def test_zeroconf_does_not_match_cloud_entry(hass):
     assert result["step_id"] == "advanced"
     assert flow.config_input["host"] == "lennox-s40-bt23m54549.local"
     assert flow.config_input["thermostat_id"] == "thermostat-1"
+
+
+@pytest.mark.asyncio
+async def test_zeroconf_migration_ignores_cloud_entry(hass):
+    entry = MockConfigEntry(
+        domain="lennoxs30",
+        unique_id="cloud-entry",
+        data={"cloud_connection": True, "email": "user@example.com"},
+    )
+    entry.add_to_hass(hass)
+
+    with patch.object(hass.config_entries, "async_update_entry") as update_entry:
+        migrated = await async_migrate_zeroconf_entry(hass, service_info())
+
+    assert migrated is False
+    update_entry.assert_not_called()
 
 
 @pytest.mark.asyncio
