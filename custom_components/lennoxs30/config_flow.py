@@ -53,7 +53,13 @@ from .const import (
     MANAGER,
 )
 from .util import dict_redact_fields, redact_email
-from .discovery import ZEROCONF_SERVICE, advertised_identity, discovered_host, discovered_port
+from .discovery import (
+    ZEROCONF_SERVICE,
+    advertised_identity,
+    discovered_host,
+    discovered_port,
+    is_lennox_service,
+)
 
 DEFAULT_POLL_INTERVAL: int = 10
 DEFAULT_FAST_POLL_INTERVAL: float = 0.75
@@ -66,7 +72,7 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_migrate_zeroconf_entry(hass: HomeAssistant, discovery_info: ZeroconfServiceInfo) -> bool:
     """Migrate an existing local entry from an IP address to mDNS data."""
-    if discovery_info.type != ZEROCONF_SERVICE:
+    if not is_lennox_service(discovery_info.type, discovery_info.name):
         return False
 
     flow = Lennoxs30ConfigFlow()
@@ -244,7 +250,7 @@ class Lennoxs30ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_zeroconf(self, discovery_info: ZeroconfServiceInfo) -> ConfigFlowResult:
         """Handle a Lennox thermostat discovered by mDNS."""
-        if discovery_info.type != ZEROCONF_SERVICE:
+        if not is_lennox_service(discovery_info.type, discovery_info.name):
             return self.async_abort(reason="not_lennox")
         hostname = discovered_host(discovery_info)
         port = discovered_port(discovery_info)

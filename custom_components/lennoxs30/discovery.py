@@ -16,6 +16,10 @@ from zeroconf.asyncio import AsyncServiceInfo, AsyncZeroconf
 from .const import CONF_THERMOSTAT_ID
 
 ZEROCONF_SERVICE = "_icomfort4._res._lii._http._tcp.local."
+# Some Lennox thermostats publish the Lennox service as an _http service and
+# include the intended service type in the instance name instead.
+HTTP_SERVICE = "_http._tcp.local."
+LENNOX_SERVICE_MARKER = "_icomfort4._res._lii._http._tcp.local."
 DEFAULT_PORT = 443
 _ID_KEYS = ("id", "uuid", "device_id", "deviceId", "thermostat_id", "thermostatId", "sysId", "serial", "serialNumber")
 
@@ -23,6 +27,13 @@ _ID_KEYS = ("id", "uuid", "device_id", "deviceId", "thermostat_id", "thermostatI
 def normalize_hostname(hostname: str) -> str:
     """Normalize a Zeroconf hostname for comparison and storage."""
     return hostname.rstrip(".").lower()
+
+
+def is_lennox_service(type_: str, name: str) -> bool:
+    """Return whether a Zeroconf record identifies a Lennox thermostat."""
+    if type_ == ZEROCONF_SERVICE:
+        return True
+    return type_ == HTTP_SERVICE and LENNOX_SERVICE_MARKER in name.lower()
 
 
 def discovered_host(info: ZeroconfServiceInfo) -> str:
@@ -85,7 +96,7 @@ class LennoxServiceListener(ServiceListener):
 
     async def _process_service(self, type_: str, name: str) -> None:
         """Resolve and migrate a discovered service."""
-        if type_ != ZEROCONF_SERVICE:
+        if not is_lennox_service(type_, name):
             return
         service = None
         for _ in range(4):

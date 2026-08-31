@@ -82,7 +82,7 @@ from .device import (
 )
 from .helpers import helper_create_zone_entity_name
 from .util import dict_redact_fields
-from .discovery import LennoxServiceListener, ZEROCONF_SERVICE
+from .discovery import HTTP_SERVICE, LennoxServiceListener, ZEROCONF_SERVICE
 
 DOMAIN = LENNOX_DOMAIN
 DOMAIN_STATE = "lennoxs30.state"
@@ -161,12 +161,19 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     hass.data[DOMAIN] = {}
     aiozc = await zeroconf.async_get_async_instance(hass)
     await _async_migrate_cached_zeroconf_entries(hass, aiozc)
-    mdns_listener = LennoxServiceListener(hass, aiozc)
-    await aiozc.async_add_service_listener(ZEROCONF_SERVICE, mdns_listener)
-    hass.data[DOMAIN]["mdns_listener"] = (aiozc, mdns_listener)
+    # Zeroconf keeps one browser per listener object, so use separate listener
+    # objects to support both the correct and malformed Lennox advertisements.
+    mdns_listeners = (
+        (ZEROCONF_SERVICE, LennoxServiceListener(hass, aiozc)),
+        (HTTP_SERVICE, LennoxServiceListener(hass, aiozc)),
+    )
+    for service_type, listener in mdns_listeners:
+        await aiozc.async_add_service_listener(service_type, listener)
+    hass.data[DOMAIN]["mdns_listener"] = (aiozc, mdns_listeners)
 
     async def _async_stop_mdns_listener(_event) -> None:
-        await aiozc.async_remove_service_listener(mdns_listener)
+        for _service_type, listener in mdns_listeners:
+            await aiozc.async_remove_service_listener(listener)
 
     hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_stop_mdns_listener)
     if config.get(DOMAIN) is None:
@@ -235,17 +242,18 @@ async def _async_migrate_cached_zeroconf_entries(hass: HomeAssistant, aiozc: Asy
     """Migrate local entries for services already present in mDNS cache."""
     from .config_flow import async_migrate_zeroconf_entry
 
-    for record in aiozc.zeroconf.cache.async_all_by_details(
-        ZEROCONF_SERVICE,
-        zeroconf_const._TYPE_PTR,
-        zeroconf_const._CLASS_IN,
-    ):
-        service = AsyncServiceInfo(ZEROCONF_SERVICE, record.alias)
-        if not service.load_from_cache(aiozc.zeroconf):
-            continue
-        info = info_from_service(service)
-        if info:
-            await async_migrate_zeroconf_entry(hass, info)
+    for service_type in (ZEROCONF_SERVICE, HTTP_SERVICE):
+        for record in aiozc.zeroconf.cache.async_all_by_details(
+            service_type,
+            zeroconf_const._TYPE_PTR,
+            zeroconf_const._CLASS_IN,
+        ):
+            service = AsyncServiceInfo(service_type, record.alias)
+            if not service.load_from_cache(aiozc.zeroconf):
+                continue
+            info = info_from_service(service)
+            if info:
+                await async_migrate_zeroconf_entry(hass, info)
 
 
 def create_migration_task(hass, migration_data):

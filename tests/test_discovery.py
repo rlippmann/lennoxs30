@@ -12,10 +12,12 @@ from custom_components.lennoxs30 import async_setup
 from custom_components.lennoxs30.config_flow import Lennoxs30ConfigFlow
 from custom_components.lennoxs30.discovery import (
     LennoxServiceListener,
+    HTTP_SERVICE,
     ZEROCONF_SERVICE,
     advertised_identity,
     discovered_host,
     discovered_port,
+    is_lennox_service,
     runtime_target,
 )
 
@@ -62,6 +64,12 @@ def test_discovery_extracts_identity_from_service_instance_name():
     assert advertised_identity(info) == "BT23M54601"
 
 
+def test_malformed_http_service_matches_only_lennox_instance():
+    malformed_name = "_BT23M54601_1._icomfort4._res._lii._http._tcp.local._http._tcp.local."
+    assert is_lennox_service(HTTP_SERVICE, malformed_name)
+    assert not is_lennox_service(HTTP_SERVICE, "printer._http._tcp.local.")
+
+
 @pytest.mark.asyncio
 async def test_async_setup_awaits_shared_zeroconf_instance(hass):
     aiozc = MagicMock()
@@ -76,8 +84,8 @@ async def test_async_setup_awaits_shared_zeroconf_instance(hass):
         assert await async_setup(hass, {}) is True
 
     get_instance.assert_awaited_once_with(hass)
-    aiozc.zeroconf.cache.async_all_by_details.assert_called_once()
-    aiozc.async_add_service_listener.assert_awaited_once()
+    assert aiozc.zeroconf.cache.async_all_by_details.call_count == 2
+    assert aiozc.async_add_service_listener.await_count == 2
 
 
 @pytest.mark.asyncio
@@ -170,6 +178,22 @@ async def test_zeroconf_full_home_assistant_flow(hass, mock_zeroconf):
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"]["host"] == "lennox-s40-bt23m54549.local"
     assert result["data"]["mdns_port"] == 443
+
+
+@pytest.mark.asyncio
+async def test_malformed_http_zeroconf_flow_is_supported(hass, mock_zeroconf):
+    mock_zeroconf.return_value.async_unregister_all_services = AsyncMock()
+    mock_zeroconf.return_value._async_close = AsyncMock()
+    malformed_info = service_info(
+        type=HTTP_SERVICE,
+        name="_BT23M54549_1._icomfort4._res._lii._http._tcp.local._http._tcp.local.",
+        properties={"id": "thermostat-1"},
+    )
+    with patch("custom_components.lennoxs30.async_setup_entry", new=AsyncMock(return_value=True)):
+        result = await hass.config_entries.flow.async_init("lennoxs30", context={"source": SOURCE_ZEROCONF}, data=malformed_info)
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "advanced"
 
 
 @pytest.mark.asyncio
