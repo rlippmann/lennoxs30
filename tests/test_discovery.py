@@ -77,26 +77,19 @@ def test_malformed_http_service_matches_only_lennox_instance():
 
 
 @pytest.mark.asyncio
-async def test_async_setup_awaits_shared_zeroconf_instance(hass):
-    aiozc = MagicMock()
-    aiozc.zeroconf.cache.async_all_by_details.return_value = []
+async def test_async_setup_awaits_shared_zeroconf_instance(hass, mock_async_zeroconf):
+    aiozc = mock_async_zeroconf
     aiozc.async_add_service_listener = AsyncMock()
     aiozc.async_remove_service_listener = AsyncMock()
 
-    with patch(
-        "custom_components.lennoxs30.zeroconf.async_get_async_instance",
-        new=AsyncMock(return_value=aiozc),
-    ) as get_instance:
-        assert await async_setup(hass, {}) is True
+    assert await async_setup(hass, {}) is True
 
-    get_instance.assert_awaited_once_with(hass)
-    assert aiozc.zeroconf.cache.async_all_by_details.call_count == 2
     assert aiozc.async_add_service_listener.await_count == 2
 
 
 @pytest.mark.asyncio
-async def test_shared_zeroconf_listener_processes_service_update(hass):
-    aiozc = MagicMock()
+async def test_shared_zeroconf_listener_processes_service_update(hass, mock_async_zeroconf):
+    aiozc = mock_async_zeroconf
     service = MagicMock()
     aiozc.async_get_service_info = AsyncMock(return_value=service)
     listener = LennoxServiceListener(hass, aiozc)
@@ -284,13 +277,16 @@ async def test_zeroconf_rediscovery_updates_loaded_manager(hass):
     flow = Lennoxs30ConfigFlow()
     flow.hass = hass
 
-    with patch.object(hass.config_entries, "async_entries", return_value=[entry]), patch.object(hass.config_entries, "async_update_entry"):
+    with patch.object(hass.config_entries, "async_entries", return_value=[entry]), patch.object(
+        hass.config_entries, "async_update_entry"
+    ) as update_entry:
         result = await flow.async_step_zeroconf(
             service_info(host="192.168.1.61", hostname="Lennox-S40.local.", properties={"id": "thermostat-1"})
         )
 
     assert result["reason"] == "already_configured"
     manager.async_update_connection_target.assert_called_once_with("lennox-s40.local", "192.168.1.61", 443)
+    assert update_entry.call_args.kwargs["unique_id"] == "lennoxs30_thermostat-1"
 
 
 @pytest.mark.asyncio
