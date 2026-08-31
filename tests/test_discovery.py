@@ -58,9 +58,12 @@ async def test_async_setup_registers_zeroconf_migration_listener(hass):
     discovery = MagicMock()
     hass.data[DATA_DISCOVERY] = discovery
     discovery.async_register_service_update_listener.return_value = MagicMock()
+    discovery.zeroconf.cache.get_all_by_details.return_value = []
 
-    assert await async_setup(hass, {}) is True
+    with patch("custom_components.lennoxs30.async_call_later") as call_later:
+        assert await async_setup(hass, {}) is True
     discovery.async_register_service_update_listener.assert_called_once()
+    call_later.assert_called_once()
 
 
 @pytest.mark.asyncio
