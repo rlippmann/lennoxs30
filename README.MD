@@ -108,7 +108,7 @@ Configuration of the integration is done within the Integrations Panel in Home A
 
 The first step is to select a Cloud or a Local connection.
 
-Most will use the Local Connection. Local connections are faster and more reliable than Cloud Connections. You can enter an IP address or hostname manually, or accept a thermostat found automatically by Home Assistant’s mDNS discovery.
+Most will use the Local Connection. Local connections are faster and more reliable than Cloud Connections. You can enter an IP address or hostname manually. If Home Assistant discovers a compatible thermostat through mDNS, it also presents a separate discovery notification that you can configure without entering an address.
 
 Why would you use a Cloud Connection? Perhaps you want to monitor your vacation home in the Alps? Or your parent's house?
 
@@ -118,7 +118,7 @@ Need both or have multiple S30s? You are able to run multiple local and multiple
 
 ## Local Configuration
 
-The next step is providing the connection information when adding a device manually.
+Use this section when adding a local thermostat manually, rather than selecting an mDNS discovery notification.
 
 1. Enter the IP address of the S30. Alternatively, you can use a DNS name. If you have firewalls and do port mapping you may specify the port (hostname:port or ip:port) By default the S30 exposes HTTPS on Port 443.
 1. You can use the defaults for the rest of the fields, or adjust as needed. See detailed configuration parameters below. Configuration can be changed later when needed. See [Detailed Configuration](#Detailed-Configuration-Parameters)
@@ -128,7 +128,9 @@ At this point, the integration will attempt to connect to the S30 - this should 
 
 ### mDNS discovery
 
-Home Assistant can discover compatible LAN-connected Lennox S30/S40 thermostats that advertise the `_icomfort4._res._lii._http._tcp.local.` service. The advertised hostname, such as `Lennox-S40-BT23M54549.local`, is retained as the durable connection target and the advertised port is preserved (normally HTTPS port `443`). Discovery is available for local entries only; cloud entries continue to use the Lennox Cloud connection.
+Home Assistant can independently discover compatible LAN-connected Lennox S30/S40 thermostats that advertise the `_icomfort4._res._lii._http._tcp.local.` service. When one is found, Home Assistant presents a discovered-device notification. Select it to configure the thermostat; you do not need to enter an IP address or hostname. Discovery is available for local entries only; cloud entries continue to use the Lennox Cloud connection.
+
+The advertised hostname, such as `Lennox-S40-BT23M54549.local`, is retained as the durable connection target and the advertised port is preserved (normally HTTPS port `443`).
 
 The integration identifies a thermostat from its mDNS hostname and service data, and from the stable thermostat identity returned by the Lennox API when available. If the thermostat is already configured manually by IP, hostname, or unique thermostat ID, discovery updates that existing entry instead of creating a duplicate. The existing config-entry ID, entities, options, and other settings are preserved.
 
