@@ -132,7 +132,7 @@ Home Assistant can discover compatible LAN-connected Lennox S30/S40 thermostats 
 
 The integration identifies a thermostat from its mDNS hostname and service data, and from the stable thermostat identity returned by the Lennox API when available. If the thermostat is already configured manually by IP, hostname, or unique thermostat ID, discovery updates that existing entry instead of creating a duplicate. The existing config-entry ID, entities, options, and other settings are preserved.
 
-When an existing IP-configured thermostat is discovered, its configuration is migrated to the mDNS hostname. The resolved IP is used only at runtime. If the thermostat receives a new IP address, a later mDNS update replaces the stale runtime address and reconnects automatically. Temporary hostname or mDNS resolution failures leave the config entry and its entities intact; the integration retries the connection when the thermostat becomes reachable again.
+When an existing IP-configured thermostat is discovered, its configuration is migrated to the mDNS hostname and the displayed config-entry title is updated from the old IP to that hostname. The immutable Home Assistant config-entry ID does not change, so the migration does not recreate the entry or its entities. The resolved IP is used only at runtime. If the thermostat receives a new IP address, a later mDNS update replaces the stale runtime address and reconnects automatically. Temporary hostname or mDNS resolution failures leave the config entry and its entities intact; the integration retries the connection when the thermostat becomes reachable again.
 
 ## Cloud Connection
 
