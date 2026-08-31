@@ -92,7 +92,7 @@ async def test_async_setup_awaits_shared_zeroconf_instance(hass):
 async def test_shared_zeroconf_listener_processes_service_update(hass):
     aiozc = MagicMock()
     service = MagicMock()
-    aiozc.async_get_service_info = AsyncMock(side_effect=[None, service])
+    aiozc.async_get_service_info = AsyncMock(return_value=service)
     listener = LennoxServiceListener(hass, aiozc)
 
     with patch(
@@ -104,8 +104,7 @@ async def test_shared_zeroconf_listener_processes_service_update(hass):
     ) as migrate:
         await listener._process_service(ZEROCONF_SERVICE, service_info().name)
 
-    assert aiozc.async_get_service_info.await_count == 2
-    aiozc.async_get_service_info.assert_any_await(ZEROCONF_SERVICE, service_info().name)
+    aiozc.async_get_service_info.assert_awaited_once_with(ZEROCONF_SERVICE, service_info().name)
     migrate.assert_awaited_once_with(hass, service_info())
 
 
