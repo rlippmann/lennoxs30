@@ -13,6 +13,8 @@ from asyncio.locks import Event
 
 import voluptuous as vol
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
+from homeassistant.components.zeroconf.const import DATA_DISCOVERY
+from homeassistant.components.zeroconf.discovery import info_from_service
 from homeassistant.const import (
     CONF_EMAIL,
     CONF_HOST,
@@ -23,7 +25,7 @@ from homeassistant.const import (
     CONF_TIMEOUT,
     EVENT_HOMEASSISTANT_STOP,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
@@ -78,6 +80,7 @@ from .device import (
 )
 from .helpers import helper_create_zone_entity_name
 from .util import dict_redact_fields
+from .discovery import ZEROCONF_SERVICE
 
 DOMAIN = LENNOX_DOMAIN
 DOMAIN_STATE = "lennoxs30.state"
@@ -154,6 +157,18 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup(hass: HomeAssistant, config: ConfigType):
     """Import config as config entry."""
     hass.data[DOMAIN] = {}
+    discovery = hass.data.get(DATA_DISCOVERY)
+    if discovery:
+        from .config_flow import async_migrate_zeroconf_entry
+
+        @callback
+        def _async_zeroconf_update(service_info) -> None:
+            info = info_from_service(service_info)
+            if info and info.type == ZEROCONF_SERVICE:
+                hass.async_create_task(async_migrate_zeroconf_entry(hass, info))
+
+        remove_listener = discovery.async_register_service_update_listener(_async_zeroconf_update)
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, lambda _event: remove_listener())
     if config.get(DOMAIN) is None:
         return True
 
