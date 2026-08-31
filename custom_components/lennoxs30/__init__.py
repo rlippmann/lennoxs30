@@ -30,6 +30,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.entity import StateInfo
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM
@@ -68,6 +69,7 @@ from .const import (
     MANAGER,
     VENTILATION_EQUIPMENT_ID,
 )
+from zeroconf import const as zeroconf_const
 from .device import (
     Device,
     S30AuxiliaryUnit,
@@ -169,6 +171,20 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
 
         remove_listener = discovery.async_register_service_update_listener(_async_zeroconf_update)
         hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, lambda _event: remove_listener())
+
+        # The core browser may have discovered services before this integration
+        # was set up. Replay cached PTR records through the same core path so
+        # existing IP-based entries are migrated at startup.
+        def _replay_cached_services(_now=None) -> None:
+            for record in discovery.zeroconf.cache.get_all_by_details(
+                ZEROCONF_SERVICE,
+                zeroconf_const._TYPE_PTR,
+                zeroconf_const._CLASS_IN,
+            ):
+                discovery._async_service_update(discovery.zeroconf, ZEROCONF_SERVICE, record.alias)
+
+        cancel_replay = async_call_later(hass, 15, _replay_cached_services)
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, lambda _event: cancel_replay())
     if config.get(DOMAIN) is None:
         return True
 
