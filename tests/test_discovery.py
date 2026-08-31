@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.config_entries import SOURCE_ZEROCONF
 from homeassistant.data_entry_flow import FlowResultType
+from custom_components.lennoxs30 import async_setup
 from custom_components.lennoxs30.config_flow import Lennoxs30ConfigFlow
 from custom_components.lennoxs30.discovery import (
     ZEROCONF_SERVICE,
@@ -58,6 +59,21 @@ def test_discovery_defaults_port_and_handles_missing_txt():
 def test_discovery_extracts_identity_from_service_instance_name():
     info = service_info(properties={}, name="_BT23M54601_1._icomfort4._res._lii._http._tcp.local.")
     assert advertised_identity(info) == "BT23M54601"
+
+
+@pytest.mark.asyncio
+async def test_async_setup_awaits_shared_zeroconf_instance(hass):
+    aiozc = MagicMock()
+    aiozc.zeroconf.cache.async_all_by_details.return_value = []
+
+    with patch(
+        "custom_components.lennoxs30.zeroconf.async_get_async_instance",
+        new=AsyncMock(return_value=aiozc),
+    ) as get_instance:
+        assert await async_setup(hass, {}) is True
+
+    get_instance.assert_awaited_once_with(hass)
+    aiozc.zeroconf.cache.async_all_by_details.assert_called_once()
 
 
 @pytest.mark.asyncio
