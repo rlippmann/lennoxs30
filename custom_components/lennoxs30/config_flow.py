@@ -70,6 +70,29 @@ DOMAIN = "lennoxs30"
 _LOGGER = logging.getLogger(__name__)
 
 
+def _stable_unique_id(identity: str | None) -> str | None:
+    """Return the config-entry unique ID for a discovered thermostat."""
+    return f"{DOMAIN}_{identity}" if identity else None
+
+
+def _update_discovered_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    data: dict[str, Any],
+    identity: str | None,
+) -> None:
+    """Update discovery data and promote a stable thermostat identity."""
+    update_kwargs: dict[str, Any] = {"data": data}
+    unique_id = _stable_unique_id(identity)
+    if unique_id and entry.unique_id != unique_id:
+        collision = any(
+            other.entry_id != entry.entry_id and other.unique_id == unique_id for other in hass.config_entries.async_entries(DOMAIN)
+        )
+        if not collision:
+            update_kwargs["unique_id"] = unique_id
+    hass.config_entries.async_update_entry(entry, **update_kwargs)
+
+
 async def async_migrate_zeroconf_entry(hass: HomeAssistant, discovery_info: ZeroconfServiceInfo) -> bool:
     """Migrate an existing local entry from an IP address to mDNS data."""
     if not is_lennox_service(discovery_info.type, discovery_info.name):
@@ -93,8 +116,8 @@ async def async_migrate_zeroconf_entry(hass: HomeAssistant, discovery_info: Zero
         CONF_MDNS_PORT: port,
         CONF_THERMOSTAT_ID: identity,
     }
-    hass.config_entries.async_update_entry(existing, data=data)
     manager = hass.data.get(DOMAIN, {}).get(existing.unique_id, {}).get(MANAGER)
+    _update_discovered_entry(hass, existing, data, identity)
     if manager:
         manager.async_update_connection_target(hostname, discovery_info.host, port)
     _LOGGER.info("Migrated Lennox entry %s to mDNS hostname %s", existing.entry_id, hostname)
@@ -263,8 +286,8 @@ class Lennoxs30ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data = {**existing.data, CONF_HOST: hostname, CONF_MDNS_PORT: port}
             if identity:
                 data[CONF_THERMOSTAT_ID] = identity
-            self.hass.config_entries.async_update_entry(existing, data=data)
             manager = self.hass.data.get(DOMAIN, {}).get(existing.unique_id, {}).get(MANAGER)
+            _update_discovered_entry(self.hass, existing, data, identity)
             if manager:
                 manager.async_update_connection_target(hostname, discovery_info.host, port)
             return self.async_abort(reason="already_configured")

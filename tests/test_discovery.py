@@ -134,6 +134,7 @@ async def test_zeroconf_existing_ip_entry_migrates_without_duplicate(hass):
     assert updated["host"] == "lennox-s40-bt23m54549.local"
     assert updated["mdns_port"] == 443
     assert updated["create_sensors"] is True
+    assert update_entry.call_args.kwargs["unique_id"] == "lennoxs30_BT23M54549"
 
 
 @pytest.mark.asyncio
@@ -232,6 +233,7 @@ async def test_malformed_http_existing_entry_migrates(hass):
     assert updated["host"] == "lennox-s40-bt23m54549.local"
     assert updated["mdns_port"] == 443
     assert updated["keep"] == "me"
+    assert update_entry.call_args.kwargs["unique_id"] == "lennoxs30_BT23M54549"
 
 
 @pytest.mark.asyncio
