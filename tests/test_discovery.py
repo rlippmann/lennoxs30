@@ -11,6 +11,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from custom_components.lennoxs30 import async_setup
 from custom_components.lennoxs30.config_flow import Lennoxs30ConfigFlow
 from custom_components.lennoxs30.discovery import (
+    LennoxServiceListener,
     ZEROCONF_SERVICE,
     advertised_identity,
     discovered_host,
@@ -65,6 +66,8 @@ def test_discovery_extracts_identity_from_service_instance_name():
 async def test_async_setup_awaits_shared_zeroconf_instance(hass):
     aiozc = MagicMock()
     aiozc.zeroconf.cache.async_all_by_details.return_value = []
+    aiozc.async_add_service_listener = AsyncMock()
+    aiozc.async_remove_service_listener = AsyncMock()
 
     with patch(
         "custom_components.lennoxs30.zeroconf.async_get_async_instance",
@@ -74,6 +77,27 @@ async def test_async_setup_awaits_shared_zeroconf_instance(hass):
 
     get_instance.assert_awaited_once_with(hass)
     aiozc.zeroconf.cache.async_all_by_details.assert_called_once()
+    aiozc.async_add_service_listener.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_shared_zeroconf_listener_processes_service_update(hass):
+    aiozc = MagicMock()
+    service = MagicMock()
+    aiozc.async_get_service_info = AsyncMock(return_value=service)
+    listener = LennoxServiceListener(hass, aiozc)
+
+    with patch(
+        "custom_components.lennoxs30.discovery.info_from_service",
+        return_value=service_info(),
+    ), patch(
+        "custom_components.lennoxs30.config_flow.async_migrate_zeroconf_entry",
+        new=AsyncMock(return_value=True),
+    ) as migrate:
+        await listener._process_service(ZEROCONF_SERVICE, service_info().name)
+
+    aiozc.async_get_service_info.assert_awaited_once_with(ZEROCONF_SERVICE, service_info().name)
+    migrate.assert_awaited_once_with(hass, service_info())
 
 
 @pytest.mark.asyncio
