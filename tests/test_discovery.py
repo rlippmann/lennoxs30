@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.config_entries import SOURCE_ZEROCONF
 from homeassistant.data_entry_flow import FlowResultType
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.lennoxs30 import async_setup
 from custom_components.lennoxs30.config_flow import Lennoxs30ConfigFlow
 from custom_components.lennoxs30.discovery import (
@@ -109,16 +110,17 @@ async def test_shared_zeroconf_listener_processes_service_update(hass, mock_asyn
 
 @pytest.mark.asyncio
 async def test_zeroconf_existing_ip_entry_migrates_without_duplicate(hass):
-    entry = MagicMock()
-    entry.unique_id = "existing-entry"
-    entry.data = {"cloud_connection": False, "host": "192.168.1.40", "create_sensors": True}
+    entry = MockConfigEntry(
+        domain="lennoxs30",
+        unique_id="existing-entry",
+        data={"cloud_connection": False, "host": "192.168.1.40", "create_sensors": True},
+    )
+    entry.add_to_hass(hass)
     hass.data["lennoxs30"] = {}
     flow = Lennoxs30ConfigFlow()
     flow.hass = hass
 
-    with patch.object(hass.config_entries, "async_entries", return_value=[entry]), patch.object(
-        hass.config_entries, "async_update_entry"
-    ) as update_entry:
+    with patch.object(hass.config_entries, "async_update_entry") as update_entry:
         result = await flow.async_step_zeroconf(service_info())
 
     assert result["type"] == "abort"
@@ -132,15 +134,16 @@ async def test_zeroconf_existing_ip_entry_migrates_without_duplicate(hass):
 
 @pytest.mark.asyncio
 async def test_zeroconf_does_not_match_cloud_entry(hass):
-    entry = MagicMock()
-    entry.unique_id = "cloud-entry"
-    entry.data = {"cloud_connection": True, "email": "user@example.com"}
+    entry = MockConfigEntry(
+        domain="lennoxs30",
+        unique_id="cloud-entry",
+        data={"cloud_connection": True, "email": "user@example.com"},
+    )
+    entry.add_to_hass(hass)
     flow = Lennoxs30ConfigFlow()
     flow.hass = hass
 
-    with patch.object(hass.config_entries, "async_entries", return_value=[entry]), patch.object(flow, "async_set_unique_id"), patch.object(
-        flow, "_abort_if_unique_id_configured"
-    ):
+    with patch.object(flow, "async_set_unique_id"), patch.object(flow, "_abort_if_unique_id_configured"):
         result = await flow.async_step_zeroconf(service_info(properties={"id": "thermostat-1"}))
 
     assert result["type"] == "form"
@@ -197,14 +200,17 @@ async def test_malformed_http_zeroconf_flow_is_supported(hass, mock_zeroconf):
 
 @pytest.mark.asyncio
 async def test_malformed_http_existing_entry_migrates(hass):
-    entry = MagicMock()
-    entry.unique_id = "existing-entry"
-    entry.data = {
-        "cloud_connection": False,
-        "host": "192.168.1.40",
-        "thermostat_id": "BT23M54549",
-        "keep": "me",
-    }
+    entry = MockConfigEntry(
+        domain="lennoxs30",
+        unique_id="existing-entry",
+        data={
+            "cloud_connection": False,
+            "host": "192.168.1.40",
+            "thermostat_id": "BT23M54549",
+            "keep": "me",
+        },
+    )
+    entry.add_to_hass(hass)
     malformed_info = service_info(
         type=HTTP_SERVICE,
         host="192.168.1.198",
@@ -215,9 +221,7 @@ async def test_malformed_http_existing_entry_migrates(hass):
     flow = Lennoxs30ConfigFlow()
     flow.hass = hass
 
-    with patch.object(hass.config_entries, "async_entries", return_value=[entry]), patch.object(
-        hass.config_entries, "async_update_entry"
-    ) as update_entry:
+    with patch.object(hass.config_entries, "async_update_entry") as update_entry:
         result = await flow.async_step_zeroconf(malformed_info)
 
     assert result["type"] == "abort"
@@ -231,15 +235,18 @@ async def test_malformed_http_existing_entry_migrates(hass):
 
 @pytest.mark.asyncio
 async def test_zeroconf_new_ip_uses_api_identity_to_migrate(hass):
-    entry = MagicMock()
-    entry.unique_id = "existing-entry"
-    entry.data = {"cloud_connection": False, "host": "192.168.1.40", "thermostat_id": "thermostat-1", "keep": "me"}
+    entry = MockConfigEntry(
+        domain="lennoxs30",
+        unique_id="existing-entry",
+        data={"cloud_connection": False, "host": "192.168.1.40", "thermostat_id": "thermostat-1", "keep": "me"},
+    )
+    entry.add_to_hass(hass)
     flow = Lennoxs30ConfigFlow()
     flow.hass = hass
 
-    with patch.object(hass.config_entries, "async_entries", return_value=[entry]), patch.object(
-        flow, "_probe_discovered_identity", return_value="thermostat-1"
-    ) as probe, patch.object(hass.config_entries, "async_update_entry") as update_entry:
+    with patch.object(flow, "_probe_discovered_identity", return_value="thermostat-1") as probe, patch.object(
+        hass.config_entries, "async_update_entry"
+    ) as update_entry:
         result = await flow.async_step_zeroconf(service_info(host="192.168.1.61", properties={}))
 
     assert result["reason"] == "already_configured"
@@ -255,9 +262,9 @@ async def test_zeroconf_probe_failure_keeps_discovery_available(hass):
     flow = Lennoxs30ConfigFlow()
     flow.hass = hass
 
-    with patch.object(hass.config_entries, "async_entries", return_value=[]), patch.object(
-        flow, "_probe_discovered_identity", return_value=None
-    ) as probe, patch.object(flow, "async_set_unique_id"), patch.object(flow, "_abort_if_unique_id_configured"):
+    with patch.object(flow, "_probe_discovered_identity", return_value=None) as probe, patch.object(
+        flow, "async_set_unique_id"
+    ), patch.object(flow, "_abort_if_unique_id_configured"):
         result = await flow.async_step_zeroconf(service_info(properties={}))
 
     assert result["type"] == "form"
@@ -269,17 +276,18 @@ async def test_zeroconf_probe_failure_keeps_discovery_available(hass):
 
 @pytest.mark.asyncio
 async def test_zeroconf_rediscovery_updates_loaded_manager(hass):
-    entry = MagicMock()
-    entry.unique_id = "existing-entry"
-    entry.data = {"cloud_connection": False, "host": "lennox-s40.local", "thermostat_id": "thermostat-1"}
+    entry = MockConfigEntry(
+        domain="lennoxs30",
+        unique_id="existing-entry",
+        data={"cloud_connection": False, "host": "lennox-s40.local", "thermostat_id": "thermostat-1"},
+    )
+    entry.add_to_hass(hass)
     manager = MagicMock()
     hass.data["lennoxs30"] = {"existing-entry": {"manager": manager}}
     flow = Lennoxs30ConfigFlow()
     flow.hass = hass
 
-    with patch.object(hass.config_entries, "async_entries", return_value=[entry]), patch.object(
-        hass.config_entries, "async_update_entry"
-    ) as update_entry:
+    with patch.object(hass.config_entries, "async_update_entry") as update_entry:
         result = await flow.async_step_zeroconf(
             service_info(host="192.168.1.61", hostname="Lennox-S40.local.", properties={"id": "thermostat-1"})
         )
@@ -291,10 +299,12 @@ async def test_zeroconf_rediscovery_updates_loaded_manager(hass):
 
 @pytest.mark.asyncio
 async def test_zeroconf_matches_existing_device_registry_identity(hass):
-    entry = MagicMock()
-    entry.entry_id = "existing-entry-id"
-    entry.unique_id = "lennoxs30_192.168.1.250"
-    entry.data = {"cloud_connection": False, "host": "192.168.1.250"}
+    entry = MockConfigEntry(
+        domain="lennoxs30",
+        unique_id="lennoxs30_192.168.1.250",
+        data={"cloud_connection": False, "host": "192.168.1.250"},
+    )
+    entry.add_to_hass(hass)
     hass.data["lennoxs30"] = {}
     registry = SimpleNamespace(
         devices={
@@ -316,9 +326,9 @@ async def test_zeroconf_matches_existing_device_registry_identity(hass):
     flow = Lennoxs30ConfigFlow()
     flow.hass = hass
 
-    with patch.object(hass.config_entries, "async_entries", return_value=[entry]), patch.object(
-        hass.config_entries, "async_update_entry"
-    ) as update_entry, patch("custom_components.lennoxs30.config_flow.dr.async_get", return_value=registry):
+    with patch.object(hass.config_entries, "async_update_entry") as update_entry, patch(
+        "custom_components.lennoxs30.config_flow.dr.async_get", return_value=registry
+    ):
         result = await flow.async_step_zeroconf(
             service_info(
                 host="192.168.1.198",
