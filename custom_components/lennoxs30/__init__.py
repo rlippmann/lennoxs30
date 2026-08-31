@@ -34,7 +34,7 @@ from homeassistant.helpers.entity import StateInfo
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util.unit_system import US_CUSTOMARY_SYSTEM
 from zeroconf import const as zeroconf_const
-from zeroconf.asyncio import AsyncServiceInfo
+from zeroconf.asyncio import AsyncServiceInfo, AsyncZeroconf
 from lennoxs30api import (
     EC_HTTP_ERR,
     EC_LOGIN,
@@ -82,7 +82,7 @@ from .device import (
 )
 from .helpers import helper_create_zone_entity_name
 from .util import dict_redact_fields
-from .discovery import ZEROCONF_SERVICE
+from .discovery import LennoxServiceListener, ZEROCONF_SERVICE
 
 DOMAIN = LENNOX_DOMAIN
 DOMAIN_STATE = "lennoxs30.state"
@@ -159,7 +159,16 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup(hass: HomeAssistant, config: ConfigType):
     """Import config as config entry."""
     hass.data[DOMAIN] = {}
-    await _async_migrate_cached_zeroconf_entries(hass)
+    aiozc = await zeroconf.async_get_async_instance(hass)
+    await _async_migrate_cached_zeroconf_entries(hass, aiozc)
+    mdns_listener = LennoxServiceListener(hass, aiozc)
+    await aiozc.async_add_service_listener(ZEROCONF_SERVICE, mdns_listener)
+    hass.data[DOMAIN]["mdns_listener"] = (aiozc, mdns_listener)
+
+    async def _async_stop_mdns_listener(_event) -> None:
+        await aiozc.async_remove_service_listener(mdns_listener)
+
+    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_stop_mdns_listener)
     if config.get(DOMAIN) is None:
         return True
     _LOGGER.warning(
@@ -222,11 +231,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     return True
 
 
-async def _async_migrate_cached_zeroconf_entries(hass: HomeAssistant) -> None:
+async def _async_migrate_cached_zeroconf_entries(hass: HomeAssistant, aiozc: AsyncZeroconf) -> None:
     """Migrate local entries for services already present in mDNS cache."""
     from .config_flow import async_migrate_zeroconf_entry
 
-    aiozc = await zeroconf.async_get_async_instance(hass)
     for record in aiozc.zeroconf.cache.async_all_by_details(
         ZEROCONF_SERVICE,
         zeroconf_const._TYPE_PTR,

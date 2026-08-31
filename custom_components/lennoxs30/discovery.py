@@ -6,7 +6,11 @@ from collections.abc import Mapping
 import re
 from typing import Any
 
+from homeassistant.components.zeroconf.discovery import info_from_service
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
+from zeroconf import ServiceListener, Zeroconf
+from zeroconf.asyncio import AsyncServiceInfo, AsyncZeroconf
 
 from .const import CONF_THERMOSTAT_ID
 
@@ -57,3 +61,37 @@ def entry_identity(data: Mapping[str, Any]) -> str | None:
     """Return the stable identity stored for a discovered entry."""
     value = data.get(CONF_THERMOSTAT_ID)
     return str(value) if value else None
+
+
+class LennoxServiceListener(ServiceListener):
+    """Track Lennox services using Home Assistant's shared Zeroconf instance."""
+
+    def __init__(self, hass: HomeAssistant, aiozc: AsyncZeroconf) -> None:
+        """Initialize the listener."""
+        self._hass = hass
+        self._aiozc = aiozc
+
+    def add_service(self, zc: Zeroconf, type_: str, name: str) -> None:
+        """Handle a service being added."""
+        self._hass.async_create_task(self._process_service(type_, name))
+
+    def update_service(self, zc: Zeroconf, type_: str, name: str) -> None:
+        """Handle a service being updated."""
+        self._hass.async_create_task(self._process_service(type_, name))
+
+    def remove_service(self, zc: Zeroconf, type_: str, name: str) -> None:
+        """Ignore temporary service removal; the config entry is retained."""
+
+    async def _process_service(self, type_: str, name: str) -> None:
+        """Resolve and migrate a discovered service."""
+        if type_ != ZEROCONF_SERVICE:
+            return
+        service = await self._aiozc.async_get_service_info(type_, name)
+        if not service:
+            return
+        info = info_from_service(service)
+        if not info:
+            return
+        from .config_flow import async_migrate_zeroconf_entry
+
+        await async_migrate_zeroconf_entry(self._hass, info)
