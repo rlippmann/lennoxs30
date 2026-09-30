@@ -371,6 +371,26 @@ template:
         unique_id: SYSTEM_PREFIX_filter_restriction_last_snapshot
         state: "{{ states('input_datetime.SYSTEM_PREFIX_filter_last_snapshot') }}"
 
+      # These sample sensors are eligible for Home Assistant long-term
+      # statistics, which survive normal recorder state-history purges.
+      - name: SYSTEM_LABEL Filter Restriction Cooling RPM per CFM Sample
+        unique_id: SYSTEM_PREFIX_filter_restriction_cooling_rpm_per_cfm_sample
+        unit_of_measurement: "rpm/CFM"
+        state_class: measurement
+        availability: >
+          {{ states('input_number.SYSTEM_PREFIX_filter_last_cool_rpm_per_cfm') | is_number
+             and states('input_number.SYSTEM_PREFIX_filter_last_cool_rpm_per_cfm') | float(0) > 0 }}
+        state: "{{ states('input_number.SYSTEM_PREFIX_filter_last_cool_rpm_per_cfm') }}"
+
+      - name: SYSTEM_LABEL Filter Restriction Heating RPM per CFM Sample
+        unique_id: SYSTEM_PREFIX_filter_restriction_heating_rpm_per_cfm_sample
+        unit_of_measurement: "rpm/CFM"
+        state_class: measurement
+        availability: >
+          {{ states('input_number.SYSTEM_PREFIX_filter_last_heat_rpm_per_cfm') | is_number
+             and states('input_number.SYSTEM_PREFIX_filter_last_heat_rpm_per_cfm') | float(0) > 0 }}
+        state: "{{ states('input_number.SYSTEM_PREFIX_filter_last_heat_rpm_per_cfm') }}"
+
       - name: SYSTEM_LABEL Filter Restriction Cooling RPM Degradation
         unique_id: SYSTEM_PREFIX_filter_restriction_cooling_rpm_degradation
         unit_of_measurement: "%"
@@ -435,11 +455,9 @@ template:
           {% set mode = states('input_select.SYSTEM_PREFIX_filter_last_sample_mode') %}
           {% set min_samples = states('input_number.SYSTEM_PREFIX_filter_min_samples_required') | int(10) %}
           {% if mode == 'cooling' %}
-            {{ states('sensor.SYSTEM_PREFIX_filter_restriction_cool_rpm_per_cfm_count') | int(0) >= min_samples
-               and states('sensor.SYSTEM_PREFIX_filter_restriction_cool_power_per_cfm_count') | int(0) >= min_samples }}
+            {{ states('sensor.SYSTEM_PREFIX_filter_restriction_cool_rpm_per_cfm_count') | int(0) >= min_samples }}
           {% elif mode == 'heating' %}
-            {{ states('sensor.SYSTEM_PREFIX_filter_restriction_heat_rpm_per_cfm_count') | int(0) >= min_samples
-               and states('sensor.SYSTEM_PREFIX_filter_restriction_heat_power_per_cfm_count') | int(0) >= min_samples }}
+            {{ states('sensor.SYSTEM_PREFIX_filter_restriction_heat_rpm_per_cfm_count') | int(0) >= min_samples }}
           {% else %}
             false
           {% endif %}
@@ -455,11 +473,9 @@ template:
           {% set threshold = states('input_number.SYSTEM_PREFIX_filter_restriction_threshold_pct') | float(20) %}
           {% if mode == 'cooling' %}
             {{ states('sensor.SYSTEM_PREFIX_filter_restriction_cool_rpm_per_cfm_count') | int(0) >= min_samples
-               and states('sensor.SYSTEM_PREFIX_filter_restriction_cool_power_per_cfm_count') | int(0) >= min_samples
                and states('sensor.SYSTEM_PREFIX_filter_restriction_cooling_rpm_degradation') | float(0) >= threshold }}
           {% elif mode == 'heating' %}
             {{ states('sensor.SYSTEM_PREFIX_filter_restriction_heat_rpm_per_cfm_count') | int(0) >= min_samples
-               and states('sensor.SYSTEM_PREFIX_filter_restriction_heat_power_per_cfm_count') | int(0) >= min_samples
                and states('sensor.SYSTEM_PREFIX_filter_restriction_heating_rpm_degradation') | float(0) >= threshold }}
           {% else %}
             false
@@ -491,9 +507,7 @@ script:
                 value_template: >
                   {% set min_samples = states('input_number.SYSTEM_PREFIX_filter_min_samples_required') | int(10) %}
                   {{ states('sensor.SYSTEM_PREFIX_filter_restriction_cool_rpm_per_cfm_mean') | float(0) > 0
-                     and states('sensor.SYSTEM_PREFIX_filter_restriction_cool_power_per_cfm_mean') | float(0) > 0
-                     and states('sensor.SYSTEM_PREFIX_filter_restriction_cool_rpm_per_cfm_count') | int(0) >= min_samples
-                     and states('sensor.SYSTEM_PREFIX_filter_restriction_cool_power_per_cfm_count') | int(0) >= min_samples }}
+                     and states('sensor.SYSTEM_PREFIX_filter_restriction_cool_rpm_per_cfm_count') | int(0) >= min_samples }}
             sequence:
               - action: input_number.set_value
                 target:
@@ -512,9 +526,7 @@ script:
                 value_template: >
                   {% set min_samples = states('input_number.SYSTEM_PREFIX_filter_min_samples_required') | int(10) %}
                   {{ states('sensor.SYSTEM_PREFIX_filter_restriction_heat_rpm_per_cfm_mean') | float(0) > 0
-                     and states('sensor.SYSTEM_PREFIX_filter_restriction_heat_power_per_cfm_mean') | float(0) > 0
-                     and states('sensor.SYSTEM_PREFIX_filter_restriction_heat_rpm_per_cfm_count') | int(0) >= min_samples
-                     and states('sensor.SYSTEM_PREFIX_filter_restriction_heat_power_per_cfm_count') | int(0) >= min_samples }}
+                     and states('sensor.SYSTEM_PREFIX_filter_restriction_heat_rpm_per_cfm_count') | int(0) >= min_samples }}
             sequence:
               - action: input_number.set_value
                 target:

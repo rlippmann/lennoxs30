@@ -21,6 +21,7 @@ The package includes:
 - one user-facing filter replacement event marker script
 - one snapshot collector automation
 - one watchdog automation
+- mode-specific RPM/CFM sample sensors suitable for Home Assistant long-term statistics
 
 ## Important Safety Notes
 
@@ -109,6 +110,14 @@ Marking a replacement is still useful because it gives later analysis an explici
 - Static pressure remains a manual, on-demand diagnostic exercise and is not currently part of this sample package.
 - RPM/CFM remains the primary experimental detection metric in this sample.
 - Power/CFM remains secondary and observational rather than the primary detection signal.
+- `sensor.<prefix>_filter_restriction_cooling_rpm_per_cfm_sample` and
+  `sensor.<prefix>_filter_restriction_heating_rpm_per_cfm_sample` expose accepted
+  RPM/CFM samples with `state_class: measurement`, allowing Home Assistant to
+  retain compact long-term statistics beyond normal recorder state-history purges.
+- The short-term statistics sensors remain mode-specific and continue to support
+  near-term alerts. RPM/CFM sample counts and baselines no longer depend on
+  power/CFM samples, because blower power may legitimately report zero or be
+  too coarsely quantized to serve as a gate.
 - Accepted-sample debug helpers record the last observed HVAC action, compressor Hz, cooling rate, heating rate, and live diagnostic level to make accepted captures easier to interpret during dogfooding.
 - The replacement marker can optionally refresh existing baseline helpers, but normal monitoring does not depend on that step.
 
